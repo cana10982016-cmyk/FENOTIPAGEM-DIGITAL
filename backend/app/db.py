@@ -1,7 +1,7 @@
 """Modelos do banco (SQLAlchemy). Funciona com SQLite e Postgres (Supabase)."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from . import config
@@ -57,7 +57,7 @@ class Flight(Base):
     data_voo: Mapped[str] = mapped_column(String(20), default="")  # AAAA-MM-DD
     arquivo: Mapped[str] = mapped_column(String(300), default="")
     caminho: Mapped[str] = mapped_column(String(500), default="")
-    tamanho: Mapped[int] = mapped_column(Integer, default=0)
+    tamanho: Mapped[int] = mapped_column(BigInteger, default=0)
     # recebido -> preparando -> pronto -> calculando -> processado | erro
     status: Mapped[str] = mapped_column(String(20), default="recebido")
     erro: Mapped[str] = mapped_column(Text, default="")
