@@ -1,7 +1,7 @@
 """Modelos do banco (SQLAlchemy). Funciona com SQLite e Postgres (Supabase)."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from . import config
@@ -80,13 +80,19 @@ class Flight(Base):
     ensaio: Mapped[Trial] = relationship(back_populates="voos")
 
 
-_connect_args = {"check_same_thread": False} if config.DATABASE_URL.startswith("sqlite") else {}
+_sqlite = config.DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _sqlite else {}
+if config.DB_SCHEMA and not _sqlite:
+    _connect_args["options"] = f"-csearch_path={config.DB_SCHEMA}"
 engine = create_engine(config.DATABASE_URL, connect_args=_connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
     config.ensure_dirs()
+    if config.DB_SCHEMA and not _sqlite:
+        with engine.begin() as c:
+            c.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{config.DB_SCHEMA}"'))
     Base.metadata.create_all(engine)
 
 

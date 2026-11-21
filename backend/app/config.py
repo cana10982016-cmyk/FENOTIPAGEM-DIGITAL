@@ -14,6 +14,8 @@ PREVIEW_DIR = DATA_DIR / "previas"
 # SQLite por padrão; em produção use o Postgres do Supabase:
 # postgresql+psycopg://postgres:SENHA@db.xxxx.supabase.co:5432/postgres
 DATABASE_URL = _env("DATABASE_URL", f"sqlite:///{DATA_DIR / 'fenotipagem.db'}")
+# Schema do Postgres onde ficam as tabelas (permite dividir um projeto Supabase com outro sistema)
+DB_SCHEMA = _env("DB_SCHEMA", "")
 
 SECRET_KEY = _env("SECRET_KEY", "troque-esta-chave-em-producao")
 TOKEN_HOURS = int(_env("TOKEN_HOURS", "72"))

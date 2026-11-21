@@ -52,7 +52,9 @@ As imagens ficam no volume `dados` e o banco no volume `banco`.
 
 ## Usar o banco do Supabase
 
-No Supabase, abra *Project Settings → Database → Connection string → URI*, troque `postgresql://` por `postgresql+psycopg://` e coloque em `DATABASE_URL` no `.env`. As tabelas são criadas sozinhas na primeira vez que o servidor sobe.
+No Supabase, abra *Project Settings → Database → Connection string → URI*, troque `postgresql://` por `postgresql+psycopg://` e coloque em `DATABASE_URL` no `.env`. As tabelas são criadas sozinhas na primeira vez que o servidor sobe. Para usar o mesmo projeto do INOVAAGRO sem misturar as tabelas, defina `DB_SCHEMA=fenotipagem`: tudo fica num schema separado.
+
+O Supabase guarda o banco, mas não roda o servidor Python. O servidor precisa de um lugar com Docker (veja abaixo).
 
 ## Publicar num servidor
 
