@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fenotipagem Digital</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- login -->
+<div class="center" id="vLogin" hidden>
+  <form class="login" id="loginForm">
+    <div class="logo" style="margin-bottom:14px"><b>Fenotipagem</b> <span>Digital</span></div>
+    <h1>Entrar</h1>
+    <p>Use o e-mail e a senha cadastrados pelo administrador.</p>
+    <div class="field"><label for="lEmail">E-mail</label><input type="text" id="lEmail" autocomplete="username" required></div>
+    <div class="field"><label for="lSenha">Senha</label><input type="password" id="lSenha" autocomplete="current-password" required style="font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%"></div>
+    <div class="err" id="lErr"></div>
+    <button class="btn primary" style="width:100%" type="submit">Entrar</button>
+  </form>
+</div>
+
+<!-- lista de ensaios -->
+<div id="vList" hidden>
+  <header class="top">
+    <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="trial-name"></div>
+    <div class="user"><span id="uName"></span><button class="btn" id="teamBtn" hidden>Equipe</button><button class="btn" id="logoutBtn">Sair</button></div>
+  </header>
+  <div class="page">
+    <div class="head"><h1>Ensaios</h1><button class="btn primary" id="newTrial">+ Novo ensaio</button></div>
+    <div class="cards" id="trialCards"></div>
+  </div>
+</div>
+
+<!-- equipe -->
+<div id="vTeam" hidden>
+  <header class="top">
+    <button class="back" id="teamBack">← Ensaios</button>
+    <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="trial-name">Equipe</div>
+  </header>
+  <div class="page">
+    <div class="grid-team" style="display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+      <div><h2 style="font-family:var(--f-display)">Pessoas</h2><div class="tw"><table class="res"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th></th></tr></thead><tbody id="teamBody"></tbody></table></div></div>
+      <form id="teamForm" class="card"><h2 style="font-family:var(--f-display);margin-top:0">Cadastrar pessoa</h2>
+        <div class="field"><label for="nNome">Nome</label><input type="text" id="nNome"></div>
+        <div class="field"><label for="nEmail">E-mail</label><input type="text" id="nEmail" required></div>
+        <div class="field"><label for="nSenha">Senha inicial (mín. 6)</label><input type="text" id="nSenha" required minlength="6"></div>
+        <label class="chk"><input type="checkbox" id="nAdmin"> Administrador</label>
+        <div class="err" id="nErr"></div>
+        <button class="btn primary" type="submit">Cadastrar</button></form>
+    </div>
+  </div>
+</div>
+
+<!-- área de trabalho do ensaio -->
+<div class="app" id="vWork" hidden>
+  <header class="top">
+    <button class="back" id="backList">← Ensaios</button>
+    <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="trial-name" id="trialName"></div>
+    <span class="saved" id="saved"></span>
+    <nav class="steps" id="steps" aria-label="Etapas">
+      <button data-s="ensaio"><span class="n">1</span>Ensaio</button>
+      <button data-s="imagens"><span class="n">2</span>Voos</button>
+      <button data-s="croqui"><span class="n">3</span>Croqui</button>
+      <button data-s="mapa"><span class="n">4</span>Mapa</button>
+      <button data-s="resultados"><span class="n">5</span>Resultados</button>
+    </nav>
+  </header>
+
+  <div class="work" id="work">
+    <aside class="side" id="side">
+      <section data-p="ensaio">
+        <h2>Ensaio</h2>
+        <p class="hint">Dados do experimento e dos tratamentos. O tratamento marcado como controle é a base do ganho. Tudo é salvo automaticamente.</p>
+        <div class="field"><label for="tNome">Nome do ensaio</label><input type="text" id="tNome"></div>
+        <div class="row2">
+          <div class="field"><label for="tCliente">Cliente / usina</label><input type="text" id="tCliente"></div>
+          <div class="field"><label for="tLocal">Local</label><input type="text" id="tLocal"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="tCultura">Cultura</label><input type="text" id="tCultura"></div>
+          <div class="field"><label for="tVar">Variedade</label><input type="text" id="tVar"></div>
+        </div>
+        <div class="field"><label for="tObs">Observações (solo, corte, aplicação…)</label><textarea id="tObs" style="font-family:var(--f-body);font-size:13px;min-height:60px"></textarea></div>
+        <h3>Tratamentos</h3>
+        <table class="ed"><thead><tr><th>Nº</th><th>Sigla</th><th>Produto / dose</th><th title="Controle">Ctrl</th><th></th></tr></thead><tbody id="trtBody"></tbody></table>
+        <div class="btns"><button class="btn" id="addTrt">+ Tratamento</button></div>
+        <h3>Excluir</h3>
+        <div class="btns"><button class="btn" id="delTrial" style="color:var(--neg)">Excluir ensaio</button></div>
+        <div id="delConfirm" hidden class="status warn">Isso apaga o ensaio, as imagens e os resultados. <div class="btns"><button class="btn" id="delYes" style="color:var(--neg)">Sim, excluir</button><button class="btn" id="delNo">Cancelar</button></div></div>
+      </section>
+
+      <section data-p="imagens" hidden>
+        <h2>Voos de drone</h2>
+        <p class="hint">Envie um ortomosaico RGB por data de voo. GeoTIFF mantém a georreferência e a área em m². O servidor lê o arquivo em resolução total.</p>
+        <div class="row2">
+          <div class="field"><label for="upLabel">Rótulo (ex.: 45 DAP)</label><input type="text" id="upLabel"></div>
+          <div class="field"><label for="upDate">Data do voo</label><input type="date" id="upDate"></div>
+        </div>
+        <div class="drop" id="drop" tabindex="0" role="button">Arraste o ortomosaico aqui ou clique para escolher<br><small>.tif, .tiff, .jpg, .png</small></div>
+        <input type="file" id="fileIn" accept=".tif,.tiff,.jpg,.jpeg,.png" hidden>
+        <div id="upProg" hidden><div class="status" id="upTxt"></div><div class="bar"><span id="upBar"></span></div></div>
+        <h3>Voos do ensaio</h3>
+        <div class="imgs" id="imgList"></div>
+      </section>
+
+      <section data-p="croqui" hidden>
+        <h2>Croqui</h2>
+        <p class="hint">Marque os 4 cantos da área das parcelas na imagem, na ordem: superior esquerdo, superior direito, inferior direito, inferior esquerdo. Depois arraste os pontos para ajustar.</p>
+        <div class="btns"><button class="btn primary" id="pickCorners">Marcar 4 cantos</button><button class="btn" id="fitCorners">Centralizar área</button></div>
+        <div class="row3">
+          <div class="field"><label for="cRows">Linhas</label><input type="number" id="cRows" min="1" max="60"></div>
+          <div class="field"><label for="cCols">Colunas</label><input type="number" id="cCols" min="1" max="60"></div>
+          <div class="field"><label for="cMargin">Bordadura %</label><input type="number" id="cMargin" min="0" max="45" step="1"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label for="gX">Grade: células na largura</label><input type="number" id="gX" min="1" max="20"></div>
+          <div class="field"><label for="gY">Grade: células na altura</label><input type="number" id="gY" min="1" max="20"></div>
+        </div>
+        <h3>Identificação das parcelas</h3>
+        <p class="hint">Escreva o nº do tratamento seguido da letra do bloco (ex.: 4A). Também dá para colar direto do Excel.</p>
+        <div class="croq-wrap"><table class="croq" id="croqTbl"></table></div>
+        <div class="btns"><button class="btn" id="randDBC">Sortear DBC</button><button class="btn" id="pasteBtn">Colar do Excel</button><button class="btn" id="geojsonBtn">Baixar parcelas (GeoJSON)</button></div>
+        <div id="pasteBox" hidden><textarea id="pasteTxt" placeholder="4A	6A	5A	3A	2A	1A&#10;2B	5B	1B	6B	3B	4B"></textarea><div class="btns"><button class="btn primary" id="pasteApply">Aplicar</button></div></div>
+        <div class="status" id="croqStatus"></div>
+      </section>
+
+      <section data-p="mapa" hidden>
+        <h2>Processar e ver no mapa</h2>
+        <p class="hint">O servidor calcula os índices de cada parcela e de cada célula da grade, em todos os voos.</p>
+        <div class="field"><label for="thrMode">Separação planta × solo (ExG)</label>
+          <select id="thrMode"><option value="otsu">Automática (Otsu por imagem, entre 0,02 e 0,20)</option><option value="fixed">Limiar fixo</option></select></div>
+        <div class="field" id="thrFixedF" hidden><label for="thrVal">Limiar ExG</label><input type="number" id="thrVal" step="0.01"></div>
+        <div class="btns"><button class="btn primary" id="runBtn">Processar índices</button></div>
+        <div class="status" id="runStatus" hidden></div>
+        <h3>Data do voo</h3>
+        <div id="dateRadios"></div>
+        <h3>Camadas</h3>
+        <label class="chk"><input type="checkbox" id="lyTrt" checked> Tratamento</label>
+        <label class="chk"><input type="checkbox" id="lyPlotId"> Parcela</label>
+        <label class="chk"><input type="checkbox" id="lyPlot" checked> Índice por parcela</label>
+        <label class="chk"><input type="checkbox" id="lyGrid"> Índice em grade</label>
+        <label class="chk"><input type="checkbox" id="lyMask"> Máscara de vegetação</label>
+        <div class="field" style="margin-top:8px"><label for="idxSel">Índice</label><select id="idxSel"></select></div>
+        <div class="legend"><span id="lgMin">–</span><span class="bar" style="height:9px;margin:0;background:linear-gradient(90deg,#d7301f,#fc8d59,#fee08b,#d9ef8b,#91cf60,#1a9850)"></span><span id="lgMax">–</span></div>
+        <p class="hint" id="idxDesc" style="margin-top:8px"></p>
+      </section>
+    </aside>
+
+    <main class="view" id="view">
+      <canvas id="cv" aria-label="Visualizador da imagem de drone com as parcelas"></canvas>
+      <div class="ov zoom"><button id="zin" aria-label="Aproximar">+</button><button id="zout" aria-label="Afastar">−</button><button id="zfit" aria-label="Enquadrar" style="font-size:13px">⤢</button></div>
+      <div class="ov brand">AgroComCiência</div>
+      <div class="ov mode" id="modeBadge" hidden></div>
+      <div class="ov credit">Gerado por Fenotipagem Digital Serviços Agrícolas</div>
+      <div class="ov tip" id="tip" hidden></div>
+      <div class="empty" id="emptyMsg" hidden><div><b id="emptyTitle">Nenhum voo pronto</b><br><span id="emptyText">Vá em Voos e envie um ortomosaico.</span></div></div>
+    </main>
+
+    <section class="results" id="results" hidden>
+      <h2>Resultados</h2>
+      <p class="hint" style="color:var(--muted)">Médias por tratamento, análise de variância (DBC quando todos os tratamentos aparecem em todos os blocos) e teste DMS (t).</p>
+      <div class="ctrls">
+        <div class="field"><label for="rIdx">Índice</label><select id="rIdx"></select></div>
+        <div class="field"><label for="rDate">Voo</label><select id="rDate"></select></div>
+        <div class="field"><label for="rAlpha">Significância</label><select id="rAlpha"><option value="0.05">5%</option><option value="0.1" selected>10%</option></select></div>
+        <div class="btns" style="margin:0"><button class="btn" id="expXlsx">Exportar Excel</button><button class="btn" id="expCsv">Parcelas (CSV)</button><button class="btn" id="copyTsv">Copiar tabela</button></div>
+      </div>
+      <div id="resBody"></div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
