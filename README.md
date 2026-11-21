@@ -39,6 +39,17 @@ backend/   API em Python (FastAPI). Leitura do ortomosaico com rasterio, cálcul
 frontend/  site (HTML, CSS e JavaScript, sem build)
 ```
 
+## Rodar no seu computador sem Docker (macOS ou Linux)
+
+Precisa de Python 3.10 ou mais novo.
+
+```bash
+./iniciar.sh   # na primeira vez cria o .env: preencha ADMIN_EMAIL, ADMIN_PASSWORD e DATABASE_URL
+./iniciar.sh   # instala o que falta e sobe o servidor em http://localhost:8000
+```
+
+As imagens ficam na pasta `dados/`.
+
 ## Rodar no seu computador (Docker)
 
 ```bash

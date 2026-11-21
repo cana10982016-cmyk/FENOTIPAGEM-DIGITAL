@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+    return os.environ.get(name, "").strip() or default
 
 
 DATA_DIR = Path(_env("DATA_DIR", str(Path(__file__).resolve().parents[2] / "dados")))
