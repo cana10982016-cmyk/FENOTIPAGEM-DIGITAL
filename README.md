@@ -50,6 +50,14 @@ Precisa de Python 3.10 ou mais novo.
 
 As imagens ficam na pasta `dados/`.
 
+## Rodar no Windows sem Docker
+
+Instale o Python 3.12 e o Git (no PowerShell: `winget install -e --id Python.Python.3.12` e `winget install -e --id Git.Git`). Depois, na pasta do sistema:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\iniciar.ps1   # na primeira vez cria o .env: preencha e rode de novo
+```
+
 ## Rodar no seu computador (Docker)
 
 ```bash
