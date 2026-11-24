@@ -82,7 +82,8 @@ def test_fluxo_completo(client):
     f = client.get(f"/api/voos/{fid}").json()
     assert f["status"] == "pronto", f
     assert f["georref"] and abs(f["gsd_m"] - GSD) < 1e-6
-    assert client.get(f"/api/voos/{fid}/previa.png").status_code == 200
+    r = client.get(f"/api/voos/{fid}/previa.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/webp"  # vem do banco
 
     croqui = {"kind": "lonlat", "corners": corners_lonlat(), "rows": ROWS, "cols": COLS, "margin": 0, "gx": 2, "gy": 2,
               "cells": [["1A", "2A", "3A"], ["1B", "2B", "3B"]]}
@@ -136,3 +137,23 @@ def test_processar_sem_croqui(client):
     tid = client.post("/api/ensaios", json={"nome": "Vazio"}).json()["id"]
     r = client.post(f"/api/ensaios/{tid}/processar")
     assert r.status_code == 400
+
+
+def test_trocar_senha(client):
+    r = client.put("/api/auth/senha", json={"atual": "errada", "nova": "nova-senha-123"})
+    assert r.status_code == 400
+    r = client.put("/api/auth/senha", json={"atual": "senha-teste", "nova": "nova-senha-123"})
+    assert r.status_code == 200
+    assert client.post("/api/auth/login", json={"email": "admin@teste.com", "senha": "nova-senha-123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "admin@teste.com", "senha": "senha-teste"}).status_code == 401
+    client.put("/api/auth/senha", json={"atual": "nova-senha-123", "nova": "senha-teste"})
+
+
+def test_modo_consulta(client, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "PERMITIR_ENVIO", False)
+    assert client.get("/api/saude").json() == {"ok": True, "envio": False}
+    t = client.post("/api/ensaios", json={"nome": "Consulta"}).json()
+    r = client.post(f"/api/ensaios/{t['id']}/voos", files={"arquivo": ("a.png", b"x", "image/png")})
+    assert r.status_code == 409
+    assert client.post(f"/api/ensaios/{t['id']}/processar").status_code in (400, 409)

@@ -27,7 +27,7 @@
   <header class="top">
     <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
     <div class="trial-name"></div>
-    <div class="user"><span id="uName"></span><button class="btn" id="teamBtn" hidden>Equipe</button><button class="btn" id="logoutBtn">Sair</button></div>
+    <div class="user"><span id="uName"></span><button class="btn" id="teamBtn" hidden>Equipe</button><button class="btn" id="pwBtn">Senha</button><button class="btn" id="logoutBtn">Sair</button></div>
   </header>
   <div class="page">
     <div class="head"><h1>Ensaios</h1><button class="btn primary" id="newTrial">+ Novo ensaio</button></div>
@@ -102,6 +102,7 @@
           <div class="field"><label for="upLabel">Rótulo (ex.: 45 DAP)</label><input type="text" id="upLabel"></div>
           <div class="field"><label for="upDate">Data do voo</label><input type="date" id="upDate"></div>
         </div>
+        <div class="status warn" id="noUpload" hidden>Este endereço é só para consulta. Envie os ortomosaicos pelo computador do servidor.</div>
         <div class="drop" id="drop" tabindex="0" role="button">Arraste o ortomosaico aqui ou clique para escolher<br><small>.tif, .tiff, .jpg, .png</small></div>
         <input type="file" id="fileIn" accept=".tif,.tiff,.jpg,.jpeg,.png" hidden>
         <div id="upProg" hidden><div class="status" id="upTxt"></div><div class="bar"><span id="upBar"></span></div></div>
@@ -175,6 +176,16 @@
     </section>
   </div>
 </div>
+<dialog id="pwDlg" class="card">
+  <form id="pwForm" method="dialog">
+    <h2 style="font-family:var(--f-display);margin-top:0">Trocar senha</h2>
+    <div class="field"><label for="pwAtual">Senha atual</label><input type="password" id="pwAtual" autocomplete="current-password" required></div>
+    <div class="field"><label for="pwNova">Nova senha (mín. 8)</label><input type="password" id="pwNova" autocomplete="new-password" required minlength="8"></div>
+    <div class="field"><label for="pwConf">Repita a nova senha</label><input type="password" id="pwConf" autocomplete="new-password" required minlength="8"></div>
+    <div class="err" id="pwErr"></div>
+    <div class="btns"><button class="btn primary" id="pwOk" type="submit">Salvar</button><button class="btn" id="pwCancel" type="button">Cancelar</button></div>
+  </form>
+</dialog>
 <div class="toast" id="toast" hidden></div>
 <script src="app.js"></script>
 </body>

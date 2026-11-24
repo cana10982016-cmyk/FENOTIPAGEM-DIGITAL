@@ -133,3 +133,7 @@ body{margin:0}
 .bar>span{display:block;height:100%;background:var(--green);width:0}
 .imgcard .err{grid-column:1/-1;margin:0}
 .back{border:0;background:none;color:var(--muted);cursor:pointer;font:600 13px var(--f-body);padding:4px 6px}
+
+dialog#pwDlg{color:var(--fg);max-width:360px;width:calc(100% - 32px);box-sizing:border-box}
+dialog#pwDlg::backdrop{background:rgba(0,0,0,.45)}
+dialog#pwDlg input[type=password]{font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;box-sizing:border-box}

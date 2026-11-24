@@ -14,13 +14,14 @@ from pathlib import Path
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from . import config, raster, stats
 from .auth import admin_user, bootstrap_admin, check_password, current_user, hash_password, make_token
-from .db import Flight, SessionLocal, Trial, User, get_session, init_db
+from .db import Flight, PreviewImage, SessionLocal, Trial, User, get_session, init_db
 from .geometry import croqui_ready, plots_geojson, plots_of
 
 log = logging.getLogger("fenotipagem")
@@ -31,11 +32,42 @@ async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as s:
         bootstrap_admin(s)
-        # voos que estavam no meio do processamento quando o servidor parou
-        for f in s.scalars(select(Flight).where(Flight.status.in_(["preparando", "calculando"]))):
-            f.status, f.erro = "erro", "O servidor reiniciou durante o processamento. Processe de novo."
-        s.commit()
+        if config.PERMITIR_ENVIO:
+            # voos que estavam no meio do processamento quando o servidor parou
+            for f in s.scalars(select(Flight).where(Flight.status.in_(["preparando", "calculando"]))):
+                f.status, f.erro = "erro", "O servidor reiniciou durante o processamento. Processe de novo."
+            s.commit()
+            _store_missing_previews(s)
     yield
+
+
+def _preview_bytes(png_path: str | Path) -> bytes:
+    """Converte a pré-visualização em WebP (bem menor que o PNG) para guardar no banco."""
+    buf = io.BytesIO()
+    with Image.open(png_path) as im:
+        im.save(buf, "WEBP", quality=85, method=4)
+    return buf.getvalue()
+
+
+def _store_preview(s: Session, f: Flight) -> None:
+    if not f.previa or not Path(f.previa).exists():
+        return
+    row = s.get(PreviewImage, f.id) or PreviewImage(voo_id=f.id)
+    row.tipo, row.dados = "image/webp", _preview_bytes(f.previa)
+    s.add(row)
+
+
+def _store_missing_previews(s: Session) -> None:
+    """Voos preparados antes desta versão: copia a pré-visualização para o banco."""
+    have = set(s.scalars(select(PreviewImage.voo_id)))
+    for f in s.scalars(select(Flight).where(Flight.previa != "")):
+        if f.id not in have:
+            try:
+                _store_preview(s, f)
+                s.commit()
+            except Exception:
+                s.rollback()
+                log.exception("falha ao guardar a pré-visualização do voo %s", f.id)
 
 
 app = FastAPI(title="Fenotipagem Digital", version="0.1.0", lifespan=lifespan)
@@ -46,6 +78,11 @@ app = FastAPI(title="Fenotipagem Digital", version="0.1.0", lifespan=lifespan)
 class LoginIn(BaseModel):
     email: str
     senha: str
+
+
+class PasswordIn(BaseModel):
+    atual: str
+    nova: str = Field(min_length=8)
 
 
 class UserIn(BaseModel):
@@ -112,7 +149,7 @@ def get_flight(s: Session, fid: int) -> Flight:
 
 @app.get("/api/saude")
 def health():
-    return {"ok": True}
+    return {"ok": True, "envio": config.PERMITIR_ENVIO}
 
 
 @app.post("/api/auth/login")
@@ -126,6 +163,16 @@ def login(body: LoginIn, s: Session = Depends(get_session)):
 @app.get("/api/auth/eu")
 def me(u: User = Depends(current_user)):
     return user_out(u)
+
+
+@app.put("/api/auth/senha")
+def change_password(body: PasswordIn, u: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not check_password(body.atual, u.senha_hash):
+        raise HTTPException(400, "A senha atual está errada.")
+    u = s.get(User, u.id)
+    u.senha_hash = hash_password(body.nova)
+    s.commit()
+    return {"ok": True}
 
 
 @app.get("/api/usuarios")
@@ -204,6 +251,9 @@ def delete_trial(tid: int, u: User = Depends(current_user), s: Session = Depends
     if not (u.admin or t.criado_por == u.id):
         raise HTTPException(403, "Só quem criou o ensaio ou o administrador pode excluí-lo.")
     paths = [p for f in t.voos for p in (f.caminho, f.previa) if p]
+    fids = [f.id for f in t.voos]
+    if fids:
+        s.execute(delete(PreviewImage).where(PreviewImage.voo_id.in_(fids)))
     s.delete(t)
     s.commit()
     for p in paths:
@@ -227,6 +277,7 @@ def _prepare(fid: int) -> None:
             out = config.PREVIEW_DIR / f"{Path(f.caminho).stem}.png"
             pv = raster.make_preview(f.caminho, out, config.PREVIEW_MAX_PX)
             f.previa, f.previa_w, f.previa_h, f.limites, f.otsu = str(out), pv["previa_w"], pv["previa_h"], pv["limites"], pv["otsu"]
+            _store_preview(s, f)
             f.status, f.erro = "pronto", ""
         except raster.RasterError as e:
             f.status, f.erro = "erro", str(e)
@@ -239,6 +290,8 @@ def _prepare(fid: int) -> None:
 @app.post("/api/ensaios/{tid}/voos", status_code=201)
 def upload_flight(tid: int, bg: BackgroundTasks, arquivo: UploadFile = File(...), rotulo: str = Form(""), data_voo: str = Form(""),
                   _: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not config.PERMITIR_ENVIO:
+        raise HTTPException(409, "Este endereço é só para consulta. Envie os ortomosaicos e processe pelo computador do servidor.")
     t = get_trial(s, tid)
     name = Path(arquivo.filename or "imagem.tif").name
     if not ALLOWED.search(name):
@@ -269,6 +322,7 @@ def delete_flight(fid: int, _: User = Depends(current_user), s: Session = Depend
     for p in (f.caminho, f.previa):
         if p:
             Path(p).unlink(missing_ok=True)
+    s.execute(delete(PreviewImage).where(PreviewImage.voo_id == f.id))
     s.delete(f)
     s.commit()
     return {"ok": True}
@@ -282,6 +336,9 @@ def read_flight(fid: int, _: User = Depends(current_user), s: Session = Depends(
 @app.get("/api/voos/{fid}/previa.png")
 def flight_preview(fid: int, _: User = Depends(current_user), s: Session = Depends(get_session)):
     f = get_flight(s, fid)
+    row = s.get(PreviewImage, f.id)
+    if row:
+        return Response(row.dados, media_type=row.tipo, headers={"Cache-Control": "private, max-age=86400"})
     if not f.previa or not Path(f.previa).exists():
         raise HTTPException(404, "A pré-visualização ainda não está pronta.")
     return FileResponse(f.previa, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
@@ -324,6 +381,8 @@ def _process(tid: int, fids: list[int]) -> None:
 
 @app.post("/api/ensaios/{tid}/processar")
 def process_trial(tid: int, bg: BackgroundTasks, voo: int | None = None, _: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not config.PERMITIR_ENVIO:
+        raise HTTPException(409, "Este endereço é só para consulta. Envie os ortomosaicos e processe pelo computador do servidor.")
     t = get_trial(s, tid)
     if not croqui_ready(t.croqui or {}):
         raise HTTPException(400, "Marque os 4 cantos e defina linhas e colunas do croqui.")

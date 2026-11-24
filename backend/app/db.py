@@ -1,7 +1,7 @@
 """Modelos do banco (SQLAlchemy). Funciona com SQLite e Postgres (Supabase)."""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from . import config
@@ -78,6 +78,14 @@ class Flight(Base):
     processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     ensaio: Mapped[Trial] = relationship(back_populates="voos")
+
+
+class PreviewImage(Base):
+    """Pré-visualização do voo guardada no banco, para o site na nuvem mostrar o mapa sem o arquivo original."""
+    __tablename__ = "previas_img"
+    voo_id: Mapped[int] = mapped_column(ForeignKey("voos.id", ondelete="CASCADE"), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(40), default="image/webp")
+    dados: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 _sqlite = config.DATABASE_URL.startswith("sqlite")

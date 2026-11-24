@@ -27,6 +27,9 @@ ADMIN_NAME = _env("ADMIN_NAME", "Administrador")
 # Lado maior da imagem de pré-visualização mostrada no mapa (px)
 PREVIEW_MAX_PX = int(_env("PREVIEW_MAX_PX", "4096"))
 
+# false na nuvem: lá não há os ortomosaicos originais, então não recebe arquivos nem processa
+PERMITIR_ENVIO = _env("PERMITIR_ENVIO", "true").lower() not in ("0", "false", "nao", "não", "no")
+
 FRONTEND_DIR = Path(_env("FRONTEND_DIR", str(Path(__file__).resolve().parents[2] / "frontend")))
 
 

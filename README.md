@@ -75,6 +75,16 @@ No Supabase, abra *Project Settings → Database → Connection string → URI*,
 
 O Supabase guarda o banco, mas não roda o servidor Python. O servidor precisa de um lugar com Docker (veja abaixo).
 
+## Site de consulta na nuvem (celular)
+
+O arquivo `render.yaml` publica no Render (plano grátis) um site com endereço fixo que funciona com o computador desligado. Ele lê o mesmo banco do Supabase, então mostra os ensaios, o mapa de cada voo (a pré-visualização fica guardada no banco) e os resultados. Nesse site não dá para enviar ortomosaicos nem processar, porque os arquivos originais ficam no computador do servidor.
+
+1. Crie uma conta em render.com entrando com o GitHub.
+2. *New → Blueprint*, escolha este repositório e confirme.
+3. Em `DATABASE_URL`, cole o mesmo valor do `.env` do computador do servidor.
+
+No plano grátis o site "dorme" depois de 15 minutos sem uso; o primeiro acesso depois disso leva cerca de 1 minuto.
+
 ## Publicar num servidor
 
 Qualquer serviço que rode Docker serve (Render, Railway, Fly.io, uma VPS). O servidor precisa de:

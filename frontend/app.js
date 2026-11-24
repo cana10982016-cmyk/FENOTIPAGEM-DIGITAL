@@ -44,6 +44,24 @@ $("loginForm").addEventListener("submit", async e => {
 });
 $("logoutBtn").onclick = () => { API.setToken(""); ME = null; showLogin(); };
 
+/* trocar senha */
+$("pwBtn").onclick = () => { $("pwForm").reset(); $("pwErr").textContent = ""; $("pwDlg").showModal(); $("pwAtual").focus(); };
+$("pwCancel").onclick = () => $("pwDlg").close();
+$("pwForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("pwErr").textContent = "";
+  if ($("pwNova").value !== $("pwConf").value) { $("pwErr").textContent = "As duas senhas novas não são iguais."; return; }
+  try { await API.put("/api/auth/senha", { atual: $("pwAtual").value, nova: $("pwNova").value }); $("pwDlg").close(); toast("Senha trocada"); }
+  catch (err) { $("pwErr").textContent = err.message; }
+});
+
+/* no site da nuvem não há envio de imagens nem processamento */
+let ENVIO = true;
+fetch("/api/saude").then(r => r.json()).then(h => {
+  ENVIO = h.envio !== false;
+  $("drop").hidden = !ENVIO; $("noUpload").hidden = ENVIO;
+  if (!ENVIO) { $("runBtn").disabled = true; $("runBtn").title = "Processe pelo computador do servidor"; }
+}).catch(() => { });
+
 async function openList() {
   show("vList"); $("uName").textContent = ME ? (ME.nome || ME.email) : ""; $("teamBtn").hidden = !(ME && ME.admin);
   const box = $("trialCards"); box.innerHTML = '<p class="hint">Carregando…</p>';
