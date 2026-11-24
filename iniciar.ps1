@@ -19,5 +19,7 @@ if (-not (Test-Path ".venv")) {
 if (-not $env:DATA_DIR) { $env:DATA_DIR = Join-Path $PSScriptRoot "dados" }
 $porta = if ($env:PORT) { $env:PORT } else { "8000" }
 Set-Location backend
+# O uvicorn escreve mensagens normais no stderr; com "Stop" o PowerShell trataria isso como erro
+$ErrorActionPreference = "Continue"
 Write-Host "Fenotipagem Digital em http://localhost:$porta  (Ctrl+C para parar)"
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port $porta --env-file ..\.env
