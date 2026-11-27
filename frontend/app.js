@@ -518,7 +518,20 @@ $("idxSel").onchange = () => { setDesc(); draw(); };
 
 /* ---------------------------------------------------------------- resultados */
 const statCache = {};
-const TESTE = { tukey: ["Tukey", "HSD"], dms: ["DMS (t)", "DMS"] };
+const TESTE = { tukey: ["Tukey", "HSD"], dms: ["DMS (t)", "DMS"], bonferroni: ["Bonferroni", "dif. mínima"], duncan: ["Duncan", ""], snk: ["SNK", ""], scottknott: ["Scott-Knott", ""], dunnett: ["Dunnett", "dif. mínima vs. controle"] };
+const pFmt = p => p == null ? "–" : p < 1e-4 ? "<0,0001" : fmt(p, 4);
+function assumptions(A) {
+  const P = A.pressupostos || {};
+  const it = (nome, p, ruim) => p == null ? "" : `<span class="pill ${p >= 0.05 ? "" : "warn"}">${nome}: ${p >= 0.05 ? "ok" : ruim} (P = ${pFmt(p)})</span>`;
+  const h = it("Normalidade dos resíduos (Shapiro-Wilk)", P.shapiro_P, "não normal") + it("Homogeneidade (Bartlett)", P.bartlett_P, "variâncias diferentes") + it("Homogeneidade (Levene)", P.levene_P, "variâncias diferentes");
+  return h ? `<div class="assume"><b>Pressupostos da análise</b>${h}<span class="hint">CV do ensaio: ${fmt(A.CV, 2)}% ${A.CV < 10 ? "(baixo, ótima precisão)" : A.CV < 20 ? "(médio, boa precisão)" : A.CV < 30 ? "(alto)" : "(muito alto)"}. Pressupostos testados a 5%.</span></div>` : "";
+}
+function testeNota(A, te, alpha, inv) {
+  const a = alpha * 100;
+  if (A.teste === "dunnett") return `Teste de Dunnett a ${a}%: * = difere do controle; ns = não difere.`;
+  const base = A.P != null && A.P >= alpha ? `F não significativo a ${a}%, então o teste de médias não separa os tratamentos. ` : "";
+  return base + `Médias seguidas da mesma letra não diferem pelo teste de ${te[0]} a ${a}%.` + (A.teste === "scottknott" ? " Scott-Knott forma grupos sem sobreposição de letras." : "") + (inv ? " Para falhas, quanto menor o valor, melhor." : "");
+}
 const curTest = () => $("rTest").value || "tukey";
 async function getStats(fid, k, alpha) {
   const te = curTest(), key = `${S.trial.id}:${fid}:${k}:${alpha}:${te}:${(S.flights.find(f => f.id === fid) || {}).processado_em}`;
@@ -537,19 +550,19 @@ async function renderResults() {
   if (A.grupos.length < 2) { body.innerHTML = '<div class="card">São necessários ao menos 2 tratamentos com parcelas processadas.</div>'; return; }
   const sig = A.P != null && A.P < alpha;
   let h = `<div class="card"><div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:8px"><b style="font-family:var(--f-display);font-size:15px">${ix.l}${ix.u ? " (" + ix.u + ")" : ""}</b>` +
-    (A.F != null ? `<span class="pill ${sig ? "sig" : ""}">${sig ? "Diferença significativa" : "Não significativo"} a ${alpha * 100}%</span><span style="color:var(--muted);font-size:12.5px">${A.delineamento} · F = ${fmt(A.F, 2)} · P = ${A.P < 1e-4 ? "<0,0001" : fmt(A.P, 4)} · CV = ${fmt(A.CV, 2)}% · ${te[1]} = ${fmt(A.dif_minima ?? A.DMS, d + 1)}</span>` : `<span style="color:var(--muted)">Repetições insuficientes para a análise de variância.</span>`) + `</div>`;
-  h += barChart(A, ix, sig) + `</div>`;
+    (A.F != null ? `<span class="pill ${sig ? "sig" : ""}">${sig ? "Diferença significativa" : "Não significativo"} a ${alpha * 100}%</span><span style="color:var(--muted);font-size:12.5px">${A.delineamento} · F = ${fmt(A.F, 2)} · P = ${A.P < 1e-4 ? "<0,0001" : fmt(A.P, 4)} · CV = ${fmt(A.CV, 2)}% ${te[1] && A.dif_minima != null ? ` · ${te[1]} = ${fmt(A.dif_minima, d + 1)}` : ""}</span>` : `<span style="color:var(--muted)">Repetições insuficientes para a análise de variância.</span>`) + `</div>`;
+  h += barChart(A, ix, sig || A.teste === "dunnett") + assumptions(A) + `</div>`;
   h += `<h3>Médias por tratamento</h3><div class="tw"><table class="res" id="trtTable"><thead><tr><th>Tratamento</th><th>n</th><th>Média</th><th>Grupo</th><th>Desvio</th><th>Ganho s/ controle</th><th>Ganho %</th></tr></thead><tbody>` +
     A.grupos.map(g => `<tr><td>${esc((g.sigla || g.code) + " · " + (g.nome || ""))}${g.ctrl ? " <span class='pill'>controle</span>" : ""}</td><td>${g.n}</td><td>${fmt(g.media, d)}</td><td class="l">${g.letras || ""}</td><td>${fmt(g.desvio, d)}</td>
       <td class="${g.ganho > 0 ? "pos" : g.ganho < 0 ? "neg" : ""}">${g.ctrl || g.ganho == null ? "–" : (g.ganho > 0 ? "+" : "") + fmt(g.ganho, d)}</td><td class="${g.ganho > 0 ? "pos" : g.ganho < 0 ? "neg" : ""}">${g.ctrl || g.ganho_pct == null ? "–" : (g.ganho_pct > 0 ? "+" : "") + fmt(g.ganho_pct, 1) + "%"}</td></tr>`).join("") +
-    `</tbody></table></div><p class="hint" style="font-size:12px">Médias seguidas da mesma letra não diferem pelo teste de ${te[0]} a ${alpha * 100}%.${ix.inv ? " Para falhas, quanto menor o valor, melhor." : ""}</p>`;
+    `</tbody></table></div><p class="hint" style="font-size:12px">${testeNota(A, te, alpha, ix.inv)}</p>`;
   const evo = done.length > 1 ? await lineChart(done, k, alpha) : "";
   if (evo) h += `<h3>Evolução entre os voos</h3><div class="card">${evo}</div>`;
   if (done.length > 1) h += await closureSection(done, alpha);
   const ks0 = idxAvail(), all0 = await Promise.all(ks0.map(x => getStats(fid, x, alpha).catch(() => null)));
   const KS = ks0.filter((x, i) => all0[i] && all0[i].grupos.length), all = all0.filter(a => a && a.grupos.length);
   h += `<h3>Todos os índices neste voo</h3><div class="tw"><table class="res"><thead><tr><th>Tratamento</th>${KS.map(x => `<th>${x}${IDX[x].u ? " (" + IDX[x].u + ")" : ""}</th>`).join("")}</tr></thead><tbody>` +
-    S.trial.tratamentos.map(t => `<tr><td>${esc((t.sigla || t.code) + " · " + (t.nome || ""))}</td>${all.map((a, i) => { const g = a && a.grupos.find(g => g.code === t.code); return `<td>${g ? fmt(g.media, IDX[KS[i]].d) + (a.P < alpha && g.letras ? " " + g.letras : "") : "–"}</td>`; }).join("")}</tr>`).join("") +
+    S.trial.tratamentos.map(t => `<tr><td>${esc((t.sigla || t.code) + " · " + (t.nome || ""))}</td>${all.map((a, i) => { const g = a && a.grupos.find(g => g.code === t.code); return `<td>${g ? fmt(g.media, IDX[KS[i]].d) + ((a.P < alpha || a.teste === "dunnett") && g.letras ? " " + g.letras : "") : "–"}</td>`; }).join("")}</tr>`).join("") +
     `<tr class="stat"><td>P (F)</td>${all.map(a => `<td>${a && a.P != null ? (a.P < 1e-4 ? "<0,0001" : fmt(a.P, 4)) : "–"}</td>`).join("")}</tr><tr class="stat"><td>CV %</td>${all.map(a => `<td>${a && a.CV != null ? fmt(a.CV, 2) : "–"}</td>`).join("")}</tr></tbody></table></div>`;
   body.innerHTML = h;
 }

@@ -545,7 +545,8 @@ def export_xlsx(tid: int, alpha: float = 0.1, teste: str = "tukey", _: User = De
         c.font, c.fill = bold, fill
 
     ws3 = wb.create_sheet("Tratamentos")
-    ws3.append(["voo", "índice", "tratamento", "sigla", "n", "média", "grupo", "desvio", "ganho", "ganho %", "delineamento", "F", "P", "CV %", "DMS", "Tukey (dif. mínima)"])
+    ws3.append(["voo", "índice", "tratamento", "sigla", "n", "média", "grupo", "desvio", "ganho", "ganho %", "delineamento", "F", "P", "CV %", "teste", "dif. mínima",
+                "Shapiro-Wilk P", "Bartlett P", "Levene P"])
     for c in ws3[1]:
         c.font, c.fill = bold, fill
     plots = plots_of(t.croqui or {}, t.tratamentos or [])
@@ -558,7 +559,8 @@ def export_xlsx(tid: int, alpha: float = 0.1, teste: str = "tukey", _: User = De
                 continue
             for g in a["grupos"]:
                 ws3.append([f.rotulo, k, g["code"], g["sigla"], g["n"], g["media"], g.get("letras", ""), g["desvio"], g.get("ganho"),
-                            g.get("ganho_pct"), a.get("delineamento"), a.get("F"), a.get("P"), a.get("CV"), a.get("DMS"), a.get("HSD")])
+                            g.get("ganho_pct"), a.get("delineamento"), a.get("F"), a.get("P"), a.get("CV"), a.get("teste_nome"),
+                            a.get("dif_minima"), *((a.get("pressupostos") or {}).get(x) for x in ("shapiro_P", "bartlett_P", "levene_P"))])
     buf = io.BytesIO()
     wb.save(buf)
     return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

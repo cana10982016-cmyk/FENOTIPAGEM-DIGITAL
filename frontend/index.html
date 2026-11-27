@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" href="img/favicon.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=6">
+<link rel="stylesheet" href="app.css?v=7">
 </head>
 <body>
 
@@ -183,12 +183,12 @@
 
     <section class="results" id="results" hidden>
       <h2>Resultados</h2>
-      <p class="hint" style="color:var(--muted)">Médias por tratamento, análise de variância (DBC quando todos os tratamentos aparecem em todos os blocos) e teste de médias (Tukey ou DMS).</p>
+      <p class="hint" style="color:var(--muted)">Médias por tratamento, análise de variância (DBC quando todos os tratamentos aparecem em todos os blocos), pressupostos e teste de médias à escolha.</p>
       <div class="ctrls">
         <div class="field"><label for="rIdx">Índice</label><select id="rIdx"></select></div>
         <div class="field"><label for="rDate">Voo</label><select id="rDate"></select></div>
         <div class="field"><label for="rAlpha">Significância</label><select id="rAlpha"><option value="0.05">5%</option><option value="0.1" selected>10%</option></select></div>
-        <div class="field"><label for="rTest">Teste de médias</label><select id="rTest"><option value="tukey" selected>Tukey</option><option value="dms">DMS (t)</option></select></div>
+        <div class="field"><label for="rTest">Teste de médias</label><select id="rTest"><option value="tukey" selected>Tukey</option><option value="scottknott">Scott-Knott</option><option value="duncan">Duncan</option><option value="snk">SNK (Student-Newman-Keuls)</option><option value="dms">DMS (t)</option><option value="bonferroni">Bonferroni</option><option value="dunnett">Dunnett (contra o controle)</option></select></div>
         <div class="btns" style="margin:0"><button class="btn" id="expXlsx">Exportar Excel</button><button class="btn" id="expCsv">Parcelas (CSV)</button><button class="btn" id="copyTsv">Copiar tabela</button></div>
       </div>
       <div id="resBody"></div>
@@ -206,6 +206,6 @@
   </form>
 </dialog>
 <div class="toast" id="toast" hidden></div>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
