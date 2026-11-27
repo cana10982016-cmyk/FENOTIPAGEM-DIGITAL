@@ -32,7 +32,9 @@ QUALIDADES = {
     # completo: ortomosaico + modelo de superfície (DSM) para a altura de plantas
     "completo": [{"name": "dsm", "value": True}, {"name": "orthophoto-resolution", "value": 2},
                  {"name": "dem-resolution", "value": 4}, {"name": "pc-quality", "value": "medium"},
-                 {"name": "feature-quality", "value": "high"}, {"name": "auto-boundary", "value": True}],
+                 {"name": "feature-quality", "value": "high"}, {"name": "auto-boundary", "value": True},
+                 # economiza memória: o modelo 3D texturizado completo não é usado na fenotipagem
+                 {"name": "skip-3dmodel", "value": True}, {"name": "texturing-skip-global-seam-leveling", "value": True}],
 }
 # códigos de status do NodeODM
 QUEUED, RUNNING, FAILED, COMPLETED, CANCELED = 10, 20, 30, 40, 50
@@ -144,7 +146,7 @@ def _set(fid: int, **kw) -> None:
 def remove_task(uid: str) -> None:
     for p in ("/task/cancel", "/task/remove"):
         try:
-            requests.post(_url(p), files={"uuid": (None, uid)}, timeout=10)
+            requests.post(_url(p), data={"uuid": uid}, timeout=10)  # aqui o NodeODM só lê urlencoded
         except Exception:  # noqa: BLE001
             pass
 
