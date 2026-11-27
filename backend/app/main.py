@@ -517,5 +517,14 @@ def export_xlsx(tid: int, alpha: float = 0.1, _: User = Depends(current_user), s
 
 # ------------------------------------------------------------------ site
 
+class _Site(StaticFiles):
+    """Arquivos do site sempre conferidos com o servidor, para uma atualização aparecer sem Ctrl+F5."""
+    async def get_response(self, path, scope):
+        r = await super().get_response(path, scope)
+        if not path.startswith("img/"):
+            r.headers["Cache-Control"] = "no-cache"
+        return r
+
+
 if config.FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(config.FRONTEND_DIR), html=True), name="site")
+    app.mount("/", _Site(directory=str(config.FRONTEND_DIR), html=True), name="site")
