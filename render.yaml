@@ -7,7 +7,7 @@ services:
     runtime: docker
     plan: free
     region: virginia
-    branch: sistema-fenotipagem
+    branch: main
     healthCheckPath: /api/saude
     envVars:
       - key: DATABASE_URL
