@@ -1,5 +1,6 @@
 """Configuração lida das variáveis de ambiente."""
 import os
+import re
 from pathlib import Path
 
 
@@ -14,6 +15,19 @@ PREVIEW_DIR = DATA_DIR / "previas"
 # SQLite por padrão; em produção use o Postgres do Supabase:
 # postgresql+psycopg://postgres:SENHA@db.xxxx.supabase.co:5432/postgres
 DATABASE_URL = _env("DATABASE_URL", f"sqlite:///{DATA_DIR / 'fenotipagem.db'}")
+
+
+def _fix_db_url(url: str) -> str:
+    """Aceita a URI copiada do Supabase como está: troca postgres:// e postgresql:// pelo driver
+    psycopg e tira os colchetes de [SENHA]."""
+    url = url.strip().strip('"').strip("'")
+    for old in ("postgres://", "postgresql://"):
+        if url.startswith(old):
+            url = "postgresql+psycopg://" + url[len(old):]
+    return re.sub(r"^(postgresql\+psycopg://[^:/@]+):\[([^\]@]*)\]@", r"\1:\2@", url)
+
+
+DATABASE_URL = _fix_db_url(DATABASE_URL)
 # Schema do Postgres onde ficam as tabelas (permite dividir um projeto Supabase com outro sistema)
 DB_SCHEMA = _env("DB_SCHEMA", "")
 
