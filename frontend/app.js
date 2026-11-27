@@ -33,7 +33,25 @@ async function download(url, name) {
 
 /* ---------------------------------------------------------------- telas */
 const VIEWS = ["vLogin", "vList", "vTeam", "vWork"];
-function show(v) { VIEWS.forEach(x => $(x).hidden = x !== v); }
+function show(v) {
+  VIEWS.forEach(x => $(x).hidden = x !== v);
+  const inApp = v !== "vLogin";
+  $("nav").hidden = $("topbar").hidden = !inApp; document.body.classList.toggle("shell", inApp);
+  document.body.classList.remove("nav-open");
+  $("navTrial").hidden = v !== "vWork";
+  $("backList").setAttribute("aria-current", v === "vList" ? "page" : "false");
+  $("teamBtn").setAttribute("aria-current", v === "vTeam" ? "page" : "false");
+  if (v === "vList") crumb("Fenotipagem", "Ensaios");
+  if (v === "vTeam") crumb("Fenotipagem", "Equipe");
+  if (ME) {
+    $("uName").textContent = ME.nome || ME.email; $("uPapel").textContent = ME.admin ? "Administrador" : "Técnico";
+    $("uAv").textContent = (ME.nome || ME.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+    $("teamBtn").hidden = !ME.admin;
+  }
+}
+function crumb(g, t) { $("crumbGrp").textContent = g; $("crumbTitle").textContent = t; }
+$("menuBtn").onclick = () => document.body.classList.toggle("nav-open");
+$("navScrim").onclick = () => document.body.classList.remove("nav-open");
 let ME = null;
 
 function showLogin() { show("vLogin"); $("lEmail").focus(); }
@@ -63,7 +81,7 @@ fetch("/api/saude").then(r => r.json()).then(h => {
 }).catch(() => { });
 
 async function openList() {
-  show("vList"); $("uName").textContent = ME ? (ME.nome || ME.email) : ""; $("teamBtn").hidden = !(ME && ME.admin);
+  show("vList");
   const box = $("trialCards"); box.innerHTML = '<p class="hint">Carregando…</p>';
   try {
     const list = await API.get("/api/ensaios");
@@ -84,7 +102,7 @@ $("newTrial").onclick = async () => {
 };
 
 /* equipe */
-$("teamBtn").onclick = openTeam; $("teamBack").onclick = openList;
+$("teamBtn").onclick = e => { e.preventDefault(); flushSave(); openTeam(); };
 async function openTeam() {
   show("vTeam");
   const us = await API.get("/api/usuarios");
@@ -132,7 +150,7 @@ async function openTrial(id, step) {
   go(step || (S.flights.length ? "mapa" : "ensaio"));
   await loadPreviews(); pollIfBusy();
 }
-$("backList").onclick = () => { flushSave(); openList(); };
+$("backList").onclick = e => { e.preventDefault(); flushSave(); openList(); };
 
 async function loadPreviews() {
   for (const f of S.flights) {
@@ -177,7 +195,8 @@ window.addEventListener("beforeunload", () => { if (dirty) flushSave(); });
 /* ---------------------------------------------------------------- navegação */
 function go(step) {
   S.step = step;
-  document.querySelectorAll("#steps button").forEach(b => b.setAttribute("aria-current", b.dataset.s === step));
+  document.querySelectorAll("#steps a").forEach(b => b.setAttribute("aria-current", b.dataset.s === step ? "page" : "false"));
+  document.body.classList.remove("nav-open");
   document.querySelectorAll("#side section").forEach(s => s.hidden = s.dataset.p !== step);
   const res = step === "resultados";
   $("results").hidden = !res; $("view").hidden = res; $("side").hidden = res;
@@ -189,10 +208,11 @@ function go(step) {
 function markDone() {
   if (!S.trial) return;
   const ok = { ensaio: S.trial.tratamentos.length > 0, imagens: S.flights.some(f => f.status === "pronto" || f.status === "processado"), croqui: !!C().corners && parsedPlots().valid, mapa: S.flights.some(f => f.tem_resultados) };
-  document.querySelectorAll("#steps button").forEach(b => b.classList.toggle("done", !!ok[b.dataset.s] && b.dataset.s !== S.step));
-  $("trialName").textContent = [S.trial.nome, S.trial.cliente, S.trial.local].filter(Boolean).join(" · ");
+  document.querySelectorAll("#steps a").forEach(b => b.classList.toggle("done", !!ok[b.dataset.s]));
+  $("trialName").textContent = S.trial.nome || "Ensaio";
+  crumb(S.trial.nome || "Ensaio", { ensaio: "Ensaio", imagens: "Voos", croqui: "Croqui", mapa: "Mapa", resultados: "Resultados" }[S.step] || "");
 }
-document.querySelectorAll("#steps button").forEach(b => b.addEventListener("click", () => go(b.dataset.s)));
+document.querySelectorAll("#steps a").forEach(b => b.addEventListener("click", e => { e.preventDefault(); go(b.dataset.s); }));
 
 /* ---------------------------------------------------------------- ensaio */
 const TF = { tNome: "nome", tCliente: "cliente", tLocal: "local", tCultura: "cultura", tVar: "variedade", tObs: "observacoes" };

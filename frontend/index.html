@@ -8,43 +8,66 @@
 <link rel="icon" type="image/png" href="img/favicon.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=3">
+<link rel="stylesheet" href="app.css?v=4">
 </head>
 <body>
 
 <!-- login -->
-<div class="center" id="vLogin" hidden>
+<div class="center login-bg" id="vLogin" hidden>
   <form class="login" id="loginForm">
-    <div class="logo" style="margin-bottom:14px"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
-    <h1>Entrar</h1>
+    <img class="login-logo logo-claro" src="img/logo.png" alt="InovaAgro Consultoria Agrícola"><img class="login-logo logo-escuro" src="img/logo-escuro.png" alt="InovaAgro Consultoria Agrícola">
+    <h1>Fenotipagem digital</h1>
     <p>Use o e-mail e a senha cadastrados pelo administrador.</p>
     <div class="field"><label for="lEmail">E-mail</label><input type="text" id="lEmail" autocomplete="username" required></div>
     <div class="field"><label for="lSenha">Senha</label><input type="password" id="lSenha" autocomplete="current-password" required style="font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%"></div>
     <div class="err" id="lErr"></div>
-    <button class="btn primary" style="width:100%" type="submit">Entrar</button>
+    <button class="btn primary big" style="width:100%" type="submit">Entrar</button>
   </form>
 </div>
 
+<!-- menu lateral e barra superior (iguais ao app INOVAAGRO) -->
+<aside class="nav" id="nav" hidden aria-label="Menu principal">
+  <div class="nav-brand">
+    <img class="ws-ic" src="img/icone.png" alt="">
+    <div class="ws-t"><b>InovaAgro</b><span>Fenotipagem digital</span></div>
+  </div>
+  <nav class="nav-links">
+    <div class="grp">Fenotipagem</div>
+    <a href="#" id="backList"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg><span>Ensaios</span></a>
+    <a href="#" id="teamBtn" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg><span>Equipe</span></a>
+    <div id="navTrial" hidden>
+      <div class="grp" id="trialName"></div>
+      <div id="steps">
+        <a href="#" data-s="ensaio"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg><span>Ensaio</span></a>
+        <a href="#" data-s="imagens"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg><span>Voos</span></a>
+        <a href="#" data-s="croqui"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 12h17"/></svg><span>Croqui</span></a>
+        <a href="#" data-s="mapa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 4-5.5 2v14L9 18l6 2 5.5-2V4L15 6 9 4Z"/><path d="M9 4v14M15 6v14"/></svg><span>Mapa</span></a>
+        <a href="#" data-s="resultados"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg><span>Resultados</span></a>
+      </div>
+    </div>
+  </nav>
+  <div class="nav-foot">
+    <div class="nav-me"><span class="avatar" id="uAv"></span><div class="who"><b id="uName"></b><span id="uPapel"></span></div></div>
+    <div class="nav-foot-btns"><button class="btn small ghost" id="pwBtn">Trocar senha</button><button class="btn small ghost" id="logoutBtn">Sair</button></div>
+  </div>
+</aside>
+<div class="nav-scrim" id="navScrim"></div>
+<header class="topbar" id="topbar" hidden>
+  <button class="icon-btn menu-btn" id="menuBtn" aria-label="Abrir menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div class="crumb"><span id="crumbGrp">Fenotipagem</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><h1 id="crumbTitle">Ensaios</h1></div>
+  <span class="saved" id="saved"></span>
+</header>
+
 <!-- lista de ensaios -->
 <div id="vList" hidden>
-  <header class="top">
-    <div class="logo"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
-    <div class="trial-name"></div>
-    <div class="user"><span id="uName"></span><button class="btn" id="teamBtn" hidden>Equipe</button><button class="btn" id="pwBtn">Senha</button><button class="btn" id="logoutBtn">Sair</button></div>
-  </header>
   <div class="page">
-    <div class="head"><h1>Ensaios</h1><button class="btn primary" id="newTrial">+ Novo ensaio</button></div>
+    <div class="head"><div><h2>Ensaios</h2><p class="hint">Cada ensaio tem os tratamentos, os voos de drone, o croqui e os resultados.</p></div><button class="btn primary" id="newTrial">+ Novo ensaio</button></div>
     <div class="cards" id="trialCards"></div>
   </div>
 </div>
 
 <!-- equipe -->
 <div id="vTeam" hidden>
-  <header class="top">
-    <button class="back" id="teamBack">← Ensaios</button>
-    <div class="logo"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
-    <div class="trial-name">Equipe</div>
-  </header>
   <div class="page">
     <div class="grid-team" style="display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
       <div><h2 style="font-family:var(--f-display)">Pessoas</h2><div class="tw"><table class="res"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th></th></tr></thead><tbody id="teamBody"></tbody></table></div></div>
@@ -61,19 +84,6 @@
 
 <!-- área de trabalho do ensaio -->
 <div class="app" id="vWork" hidden>
-  <header class="top">
-    <button class="back" id="backList">← Ensaios</button>
-    <div class="logo"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
-    <div class="trial-name" id="trialName"></div>
-    <span class="saved" id="saved"></span>
-    <nav class="steps" id="steps" aria-label="Etapas">
-      <button data-s="ensaio"><span class="n">1</span>Ensaio</button>
-      <button data-s="imagens"><span class="n">2</span>Voos</button>
-      <button data-s="croqui"><span class="n">3</span>Croqui</button>
-      <button data-s="mapa"><span class="n">4</span>Mapa</button>
-      <button data-s="resultados"><span class="n">5</span>Resultados</button>
-    </nav>
-  </header>
 
   <div class="work" id="work">
     <aside class="side" id="side">
@@ -190,6 +200,6 @@
   </form>
 </dialog>
 <div class="toast" id="toast" hidden></div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
