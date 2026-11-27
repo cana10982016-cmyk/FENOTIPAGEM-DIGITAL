@@ -1,0 +1,20 @@
+# Site de consulta na nuvem (Render, plano grátis).
+# Mostra ensaios, mapas e resultados guardados no Supabase. O envio de ortomosaicos
+# e o processamento continuam no computador do servidor (PERMITIR_ENVIO=false aqui).
+services:
+  - type: web
+    name: fenotipagem-digital
+    runtime: docker
+    plan: free
+    region: virginia
+    branch: main
+    healthCheckPath: /api/saude
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SCHEMA
+        value: fenotipagem
+      - key: PERMITIR_ENVIO
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
