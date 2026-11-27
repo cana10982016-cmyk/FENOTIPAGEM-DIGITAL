@@ -19,17 +19,30 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from . import config, raster, stats
+from . import config, stats
+from .indices import INDICES, RasterError
 from .auth import admin_user, bootstrap_admin, check_password, current_user, hash_password, make_token
 from .db import Flight, PreviewImage, SessionLocal, Trial, User, get_session, init_db
 from .geometry import croqui_ready, plots_geojson, plots_of
 
 log = logging.getLogger("fenotipagem")
+DB_ERRO = ""
+
+
+def _sem_senha(msg: str) -> str:
+    return re.sub(r"(://[^:/@\s]+:)[^@\s]+@", r"\1***@", msg)[:500]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    global DB_ERRO
+    try:
+        init_db()
+    except Exception as e:  # o site sobe mesmo assim e mostra o erro em /api/saude
+        DB_ERRO = _sem_senha(str(e))
+        log.error("não consegui conectar ao banco: %s", DB_ERRO)
+        yield
+        return
     with SessionLocal() as s:
         bootstrap_admin(s)
         if config.PERMITIR_ENVIO:
@@ -149,6 +162,8 @@ def get_flight(s: Session, fid: int) -> Flight:
 
 @app.get("/api/saude")
 def health():
+    if DB_ERRO:
+        return {"ok": False, "erro_banco": DB_ERRO}
     return {"ok": True, "envio": config.PERMITIR_ENVIO}
 
 
@@ -207,7 +222,7 @@ def deactivate_user(uid: int, me_: User = Depends(admin_user), s: Session = Depe
 
 @app.get("/api/indices")
 def list_indices():
-    return raster.INDICES
+    return INDICES
 
 
 @app.get("/api/ensaios")
@@ -267,6 +282,7 @@ ALLOWED = re.compile(r"\.(tif|tiff|jpg|jpeg|png)$", re.I)
 
 
 def _prepare(fid: int) -> None:
+    from . import raster  # só no computador do servidor (o site de consulta não processa)
     with SessionLocal() as s:
         f = s.get(Flight, fid)
         if not f:
@@ -279,7 +295,7 @@ def _prepare(fid: int) -> None:
             f.previa, f.previa_w, f.previa_h, f.limites, f.otsu = str(out), pv["previa_w"], pv["previa_h"], pv["limites"], pv["otsu"]
             _store_preview(s, f)
             f.status, f.erro = "pronto", ""
-        except raster.RasterError as e:
+        except RasterError as e:
             f.status, f.erro = "erro", str(e)
         except Exception as e:  # arquivo corrompido ou formato não suportado
             log.exception("falha ao preparar voo %s", fid)
@@ -354,6 +370,7 @@ def _threshold(t: Trial, f: Flight) -> float:
 
 
 def _process(tid: int, fids: list[int]) -> None:
+    from . import raster
     with SessionLocal() as s:
         t = s.get(Trial, tid)
         if not t:
@@ -371,7 +388,7 @@ def _process(tid: int, fids: list[int]) -> None:
                 f.status, f.erro = "processado", ""
                 if not f.resultados:
                     f.erro = "Nenhuma parcela caiu dentro desta imagem. Confira os cantos do croqui."
-            except raster.RasterError as e:
+            except RasterError as e:
                 f.status, f.erro = "erro", str(e)
             except Exception as e:
                 log.exception("falha ao processar voo %s", fid)
@@ -411,7 +428,7 @@ def trial_stats(tid: int, voo: int, indice: str = "CC", alpha: float = Query(0.1
     f = get_flight(s, voo)
     if f.ensaio_id != t.id:
         raise HTTPException(404, "Voo não pertence a este ensaio.")
-    if indice not in raster.INDICES:
+    if indice not in INDICES:
         raise HTTPException(400, "Índice desconhecido.")
     return stats.analyze(plots_of(t.croqui, t.tratamentos or []), f.resultados or {}, t.tratamentos or [], indice, alpha)
 
@@ -424,7 +441,7 @@ def trial_geojson(tid: int, _: User = Depends(current_user), s: Session = Depend
 
 def _plot_rows(t: Trial):
     plots = plots_of(t.croqui or {}, t.tratamentos or [])
-    keys = list(raster.INDICES)
+    keys = list(INDICES)
     head = ["voo", "data", "parcela", "tratamento", "sigla", "produto", "bloco", "linha", "coluna", "pixels", "area_m2", *keys]
     rows = []
     for f in t.voos:
@@ -487,7 +504,7 @@ def export_xlsx(tid: int, alpha: float = 0.1, _: User = Depends(current_user), s
     for f in t.voos:
         if not f.resultados:
             continue
-        for k in raster.INDICES:
+        for k in INDICES:
             a = stats.analyze(plots, f.resultados, t.tratamentos or [], k, alpha)
             for g in a["grupos"]:
                 ws3.append([f.rotulo, k, g["code"], g["sigla"], g["n"], g["media"], g.get("letras", ""), g["desvio"], g.get("ganho"),

@@ -23,21 +23,7 @@ WGS84 = "EPSG:4326"
 DARK = 60  # soma R+G+B (escala 8 bits) abaixo disso é sombra: não conta como planta
 OTSU_MIN, OTSU_MAX = 0.02, 0.20
 
-INDICES = {
-    "CC": {"nome": "Cobertura vegetal", "unidade": "%", "casas": 1},
-    "ExG": {"nome": "Excesso de verde", "unidade": "", "casas": 3},
-    "ExGR": {"nome": "ExG − ExR", "unidade": "", "casas": 3},
-    "VARI": {"nome": "VARI", "unidade": "", "casas": 3},
-    "GLI": {"nome": "GLI", "unidade": "", "casas": 3},
-    "NGRDI": {"nome": "NGRDI", "unidade": "", "casas": 3},
-    "MGRVI": {"nome": "MGRVI", "unidade": "", "casas": 3},
-    "RGBVI": {"nome": "RGBVI", "unidade": "", "casas": 3},
-    "ExGveg": {"nome": "ExG da planta", "unidade": "", "casas": 3},
-}
-
-
-class RasterError(Exception):
-    pass
+from .indices import INDICES, RasterError  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------- leitura
