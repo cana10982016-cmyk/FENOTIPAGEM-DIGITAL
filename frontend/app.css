@@ -218,3 +218,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:color-mix(in s
 .login-logo{width:100%;max-width:220px;height:auto;margin:0 auto 10px;display:block}
 .login h1{font-size:18px;font-weight:600;text-align:center}
 .login>p{text-align:center}
+.imgcard .extra{margin-top:4px}
+.lnk{background:none;border:0;padding:0;color:var(--brand,#4f7a3a);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.imgcard .bnd{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:end;margin-top:6px}
+.imgcard .bnd label{display:flex;flex-direction:column;font-size:11px;gap:2px}
+.imgcard .bnd input{width:54px;padding:4px 6px}
+.imgcard .bnd small{flex-basis:100%;font-size:11px}

@@ -14,14 +14,15 @@ const API = {
   async req(method, url, body, raw) {
     const opt = { method, headers: {} };
     if (this.token) opt.headers.Authorization = "Bearer " + this.token;
-    if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+    if (body instanceof FormData) opt.body = body;
+    else if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
     const r = await fetch(url, opt);
     if (r.status === 401) { this.setToken(""); showLogin(); throw new Error("Sessão expirada."); }
     if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch (_) { } throw new Error(typeof m === "string" ? m : JSON.stringify(m)); }
     return raw ? r : r.json();
   },
   get(u) { return this.req("GET", u); }, post(u, b) { return this.req("POST", u, b ?? {}); },
-  put(u, b) { return this.req("PUT", u, b); }, del(u) { return this.req("DELETE", u); },
+  put(u, b) { return this.req("PUT", u, b); }, del(u) { return this.req("DELETE", u); }, upload(u, fd) { return this.req("POST", u, fd); },
 };
 async function download(url, name) {
   try {
@@ -127,10 +128,20 @@ const IDX = {
   MGRVI: { l: "MGRVI", u: "", d: 3, desc: "(G² − R²) / (G² + R²). Bendig et al. (2015)." },
   RGBVI: { l: "RGBVI", u: "", d: 3, desc: "(G² − B·R) / (G² + B·R). Bendig et al. (2015)." },
   ExGveg: { l: "ExG da planta", u: "", d: 3, desc: "ExG médio só dos pixels de planta: vigor do verde sem a influência do solo exposto." },
+  FALHA: { l: "Falhas de plantio", u: "%", d: 1, inv: true, desc: "Porcentagem do comprimento das linhas sem planta em trechos de 0,5 m ou mais (critério de Stolf). Quanto menor, melhor." },
+  ALT: { l: "Altura de plantas", u: "m", d: 2, desc: "Altura do dossel pelo modelo 3D (DSM): percentil 95 menos percentil 5 da altitude dentro da parcela. Envie o DSM junto com o voo." },
+  NDVI: { l: "NDVI", u: "", d: 3, desc: "(NIR − R) / (NIR + R). Precisa de câmera multiespectral com banda infravermelha. Rouse et al. (1974)." },
+  NDRE: { l: "NDRE", u: "", d: 3, desc: "(NIR − RedEdge) / (NIR + RedEdge). Sensível ao nitrogênio e à clorofila em dossel fechado. Barnes et al. (2000)." },
+  GNDVI: { l: "GNDVI", u: "", d: 3, desc: "(NIR − G) / (NIR + G). Gitelson et al. (1996)." },
 };
 const IDXK = Object.keys(IDX);
-$("idxSel").innerHTML = IDXK.map(k => `<option value="${k}">${IDX[k].l}</option>`).join("");
-$("rIdx").innerHTML = $("idxSel").innerHTML;
+// só mostra os índices que existem nos resultados do ensaio (ex.: NDVI só com imagem multiespectral)
+function idxAvail() {
+  const have = new Set(); for (const f of (S && S.flights) || []) for (const r of Object.values(f.resultados || {})) { for (const k in r) if (r[k] != null) have.add(k); break; }
+  const ks = IDXK.filter(k => have.has(k)); return ks.length ? ks : IDXK.filter(k => !["FALHA", "ALT", "NDVI", "NDRE", "GNDVI"].includes(k));
+}
+function fillIdxSel(id) { const el = $(id), v = el.value, ks = idxAvail(), h = ks.map(k => `<option value="${k}">${IDX[k].l}</option>`).join(""); if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; el.value = ks.includes(v) ? v : "CC"; } }
+const FAMILIA_INV = k => IDX[k] && IDX[k].inv;
 
 /* ---------------------------------------------------------------- estado do ensaio */
 const S = { trial: null, flights: [], bmp: {}, cur: null, step: "mapa", view: { s: 1, tx: 0, ty: 0 }, pick: null, masks: {} };
@@ -144,8 +155,9 @@ async function openTrial(id, step) {
   const c = S.trial.croqui;
   S.trial.croqui = Object.assign({ kind: null, corners: null, rows: 4, cols: 6, margin: 8, gx: 3, gy: 2, cells: [] }, c || {});
   S.trial.ajustes = Object.assign({ thr_mode: "otsu", thr_value: 0.05 }, S.trial.ajustes || {});
-  S.flights = S.trial.voos; fillTrial(); fillCroq(); renderFlights(); renderDateRadios();
+  S.flights = S.trial.voos; fillIdxSel("idxSel"); fillIdxSel("rIdx"); fillTrial(); fillCroq(); renderFlights(); renderDateRadios();
   $("thrMode").value = S.trial.ajustes.thr_mode; $("thrVal").value = S.trial.ajustes.thr_value; $("thrFixedF").hidden = S.trial.ajustes.thr_mode !== "fixed";
+  $("espac").value = S.trial.ajustes.espac_m ?? 1.5; $("falhaMin").value = S.trial.ajustes.falha_min_m ?? 0.5; setDesc();
   $("saved").textContent = "";
   go(step || (S.flights.length ? "mapa" : "ensaio"));
   await loadPreviews(); pollIfBusy();
@@ -275,6 +287,23 @@ function renderFlights() {
     m.innerHTML = `<input type="text" value="${esc(f.rotulo)}" aria-label="Rótulo do voo"><div class="meta">${esc(f.arquivo)} · ${fmt(f.tamanho / 1048576, 1)} MB<br>
       ${f.largura ? `${f.largura}×${f.altura} px · ` : ""}${f.gsd_m ? fmt(f.gsd_m * 100, 1) + " cm/px" : f.status === "pronto" || f.status === "processado" ? "sem georref." : ""} <span class="badge ${st[1]}">${st[0]}</span></div>`;
     m.querySelector("input").onchange = async e => { f.rotulo = e.target.value; await API.put("/api/voos/" + f.id, { rotulo: f.rotulo }); renderDateRadios(); };
+    // modelo de altura (DSM) e bandas da câmera
+    const ex = document.createElement("div"); ex.className = "meta extra";
+    ex.innerHTML = (f.dsm_arquivo ? `Altura: <b>${esc(f.dsm_arquivo)}</b> <button class="lnk" data-a="rmdsm">remover</button>` : `<button class="lnk" data-a="dsm">+ Altura (DSM)</button>`) +
+      ` · <button class="lnk" data-a="bnd">Bandas${f.bandas && (f.bandas.nir || f.bandas.re) ? " (multiespectral)" : ""}</button>` +
+      `<div class="bnd" hidden>${["r", "g", "b", "re", "nir"].map(k => `<label>${{ r: "R", g: "G", b: "B", re: "RedEdge", nir: "NIR" }[k]}<input type="number" min="0" max="20" data-b="${k}" value="${(f.bandas || {})[k] ?? { r: 1, g: 2, b: 3, re: 0, nir: 0 }[k]}"></label>`).join("")}
+        <small>Nº da banda no arquivo (0 = não tem). Câmera RGB: 1, 2, 3, 0, 0.</small><button class="btn" data-a="bndok">Aplicar</button></div>`;
+    ex.onclick = async e => {
+      const a = e.target.dataset.a; if (!a) return;
+      if (a === "bnd") { ex.querySelector(".bnd").hidden = !ex.querySelector(".bnd").hidden; return; }
+      if (!ENVIO) { toast("Faça isso pelo computador do servidor."); return; }
+      try {
+        if (a === "dsm") { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".tif,.tiff"; inp.onchange = async () => { if (!inp.files[0]) return; const fd = new FormData(); fd.append("arquivo", inp.files[0]); toast("Enviando o DSM…"); try { await API.upload("/api/voos/" + f.id + "/dsm", fd); toast("DSM recebido. Processe os índices de novo para calcular a altura."); await refreshTrial(); renderFlights(); } catch (er) { toast(er.message); } }; inp.click(); }
+        if (a === "rmdsm") { await API.del("/api/voos/" + f.id + "/dsm"); await refreshTrial(); renderFlights(); }
+        if (a === "bndok") { const bandas = {}; ex.querySelectorAll("[data-b]").forEach(i => bandas[i.dataset.b] = +i.value || 0); await API.put("/api/voos/" + f.id, { bandas }); toast("Bandas salvas. A imagem será preparada de novo."); await refreshTrial(); renderFlights(); pollIfBusy(); }
+      } catch (er) { toast(er.message); }
+    };
+    m.appendChild(ex);
     d.appendChild(m);
     const del = document.createElement("button"); del.className = "x"; del.textContent = "×"; del.setAttribute("aria-label", "Excluir voo");
     del.onclick = async () => { if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Excluir?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "×"; }, 3000); return; }
@@ -363,6 +392,8 @@ function cornersPix(f) { return C().corners ? C().corners.map(p => toPix(f, p)) 
 /* ---------------------------------------------------------------- processar */
 $("thrMode").onchange = () => { S.trial.ajustes.thr_mode = $("thrMode").value; $("thrFixedF").hidden = $("thrMode").value !== "fixed"; S.masks = {}; draw(); save(); };
 $("thrVal").oninput = () => { S.trial.ajustes.thr_value = +$("thrVal").value; S.masks = {}; draw(); save(); };
+$("espac").onchange = () => { const v = +$("espac").value; if (v >= 0.3 && v <= 5) { S.trial.ajustes.espac_m = v; save(); } };
+$("falhaMin").onchange = () => { const v = +$("falhaMin").value; if (v >= 0.1 && v <= 5) { S.trial.ajustes.falha_min_m = v; save(); } };
 $("runBtn").onclick = async () => {
   await flushSave();
   try { await API.post(`/api/ensaios/${S.trial.id}/processar`); $("runStatus").hidden = false; $("runStatus").classList.remove("warn"); $("runStatus").textContent = "Calculando no servidor…"; await refreshTrial(); pollIfBusy(); }
@@ -407,10 +438,12 @@ function draw() {
   const mapStep = S.step === "mapa";
   if (mapStep && $("lyMask").checked) { if (!S.masks[f.id]) S.masks[f.id] = buildMask(f); ctx.drawImage(S.masks[f.id], S.view.tx, S.view.ty, f.previa_w * S.view.s, f.previa_h * S.view.s); }
   const cp = cornersPix(f); if (!cp || cp.some(p => !isFinite(p[0]))) return;
+  fillIdxSel("idxSel");
   const pp = parsedPlots(), res = f.resultados && Object.keys(f.resultados).length ? f.resultados : null, k = curIdx();
   const showPlot = mapStep && res && $("lyPlot").checked, showGrid = mapStep && res && $("lyGrid").checked;
   let rng = [0, 1]; if (res) { rng = rangeFor(res, k, showGrid && !showPlot); $("lgMin").textContent = fmt(rng[0], IDX[k].d); $("lgMax").textContent = fmt(rng[1], IDX[k].d); }
-  const nrm = v => rng[1] > rng[0] ? (v - rng[0]) / (rng[1] - rng[0]) : .5;
+  const inv = FAMILIA_INV(k), nrm = v => { const t = rng[1] > rng[0] ? (v - rng[0]) / (rng[1] - rng[0]) : .5; return inv ? 1 - t : t; };
+  $("lgBar").style.transform = inv ? "scaleX(-1)" : "";
   const { rows, cols, gx, gy } = C(), byRC = {}; pp.plots.forEach(p => byRC[p.r + "," + p.c] = p);
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const p = byRC[r + "," + c], q = plotQuad(cp, r, c), R = p && res ? res[p.id] : null;
@@ -471,7 +504,7 @@ function hover(p) {
   const w = unscr(p), hit = parsedPlots().plots.find(x => inQuad(plotQuad(cp, x.r, x.c), w)); if (!hit) { hideTip(); return; }
   const R = f.resultados && f.resultados[hit.id], t = $("tip");
   let h = `<b>Parcela ${esc(hit.id)}</b><br>${hit.trt ? esc((hit.trt.sigla || hit.trt.code) + " · " + hit.trt.nome) : "tratamento não cadastrado"}${hit.bloco ? " · bloco " + hit.bloco : ""}`;
-  if (R) h += "<table>" + ["CC", "ExG", "VARI", "GLI", "NGRDI"].map(k => `<tr><td>${k}</td><td>${fmt(R[k], IDX[k].d)}${IDX[k].u ? " " + IDX[k].u : ""}</td></tr>`).join("") + (R.area ? `<tr><td>Área</td><td>${fmt(R.area, 1)} m²</td></tr>` : "") + "</table>";
+  if (R) h += "<table>" + ["CC", "FALHA", "ALT", "ExG", "VARI", "GLI", "NDVI", "NDRE"].filter(k => R[k] != null).map(k => `<tr><td>${k}</td><td>${fmt(R[k], IDX[k].d)}${IDX[k].u ? " " + IDX[k].u : ""}</td></tr>`).join("") + (R.falha_m != null ? `<tr><td>Falhas</td><td>${fmt(R.falha_m, 1)} de ${fmt(R.linha_m, 0)} m</td></tr>` : "") + (R.area ? `<tr><td>Área</td><td>${fmt(R.area, 1)} m²</td></tr>` : "") + "</table>";
   t.innerHTML = h; t.hidden = false; const vr = $("view").getBoundingClientRect(); let x = p[0] + 14, y = p[1] + 14; if (x + 200 > vr.width) x = p[0] - 210; if (y + 150 > vr.height) y = p[1] - 160; t.style.left = Math.max(4, x) + "px"; t.style.top = Math.max(4, y) + "px";
 }
 function renderDateRadios() {
@@ -479,15 +512,17 @@ function renderDateRadios() {
   $("dateRadios").innerHTML = r.map(f => `<label class="chk"><input type="radio" name="dt" value="${f.id}" ${f.id === S.cur ? "checked" : ""}> ${esc(f.rotulo)}</label>`).join("") || '<p class="hint">Sem voos prontos.</p>';
 }
 $("dateRadios").addEventListener("change", e => { S.cur = +e.target.value; draw(); });
-const setDesc = () => $("idxDesc").textContent = IDX[curIdx()].desc; setDesc();
+const setDesc = () => $("idxDesc").textContent = (IDX[curIdx()] || IDX.CC).desc;
 $("idxSel").onchange = () => { setDesc(); draw(); };
 ["lyTrt", "lyPlotId", "lyPlot", "lyGrid", "lyMask"].forEach(id => $(id).onchange = draw);
 
 /* ---------------------------------------------------------------- resultados */
 const statCache = {};
+const TESTE = { tukey: ["Tukey", "HSD"], dms: ["DMS (t)", "DMS"] };
+const curTest = () => $("rTest").value || "tukey";
 async function getStats(fid, k, alpha) {
-  const key = `${S.trial.id}:${fid}:${k}:${alpha}:${(S.flights.find(f => f.id === fid) || {}).processado_em}`;
-  if (!statCache[key]) statCache[key] = API.get(`/api/ensaios/${S.trial.id}/estatistica?voo=${fid}&indice=${k}&alpha=${alpha}`);
+  const te = curTest(), key = `${S.trial.id}:${fid}:${k}:${alpha}:${te}:${(S.flights.find(f => f.id === fid) || {}).processado_em}`;
+  if (!statCache[key]) statCache[key] = API.get(`/api/ensaios/${S.trial.id}/estatistica?voo=${fid}&indice=${k}&alpha=${alpha}&teste=${te}`);
   return statCache[key];
 }
 async function renderResults() {
@@ -495,27 +530,56 @@ async function renderResults() {
   sel.innerHTML = done.map(f => `<option value="${f.id}">${esc(f.rotulo)}</option>`).join(""); if (prev && done.some(f => String(f.id) === prev)) sel.value = prev;
   const body = $("resBody");
   if (!done.length) { body.innerHTML = '<div class="card"><b>Ainda não há resultados.</b><p class="hint">Vá em Mapa e clique em Processar índices.</p></div>'; return; }
-  const k = $("rIdx").value || "CC", alpha = +$("rAlpha").value, fid = +sel.value, ix = IDX[k], d = ix.d;
+  fillIdxSel("rIdx");
+  const k = $("rIdx").value || "CC", te = TESTE[curTest()], alpha = +$("rAlpha").value, fid = +sel.value, ix = IDX[k], d = ix.d;
   body.innerHTML = '<p class="hint">Calculando…</p>';
   let A; try { A = await getStats(fid, k, alpha); } catch (e) { body.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
   if (A.grupos.length < 2) { body.innerHTML = '<div class="card">São necessários ao menos 2 tratamentos com parcelas processadas.</div>'; return; }
   const sig = A.P != null && A.P < alpha;
   let h = `<div class="card"><div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:8px"><b style="font-family:var(--f-display);font-size:15px">${ix.l}${ix.u ? " (" + ix.u + ")" : ""}</b>` +
-    (A.F != null ? `<span class="pill ${sig ? "sig" : ""}">${sig ? "Diferença significativa" : "Não significativo"} a ${alpha * 100}%</span><span style="color:var(--muted);font-size:12.5px">${A.delineamento} · F = ${fmt(A.F, 2)} · P = ${A.P < 1e-4 ? "<0,0001" : fmt(A.P, 4)} · CV = ${fmt(A.CV, 2)}% · DMS = ${fmt(A.DMS, d + 1)}</span>` : `<span style="color:var(--muted)">Repetições insuficientes para a análise de variância.</span>`) + `</div>`;
+    (A.F != null ? `<span class="pill ${sig ? "sig" : ""}">${sig ? "Diferença significativa" : "Não significativo"} a ${alpha * 100}%</span><span style="color:var(--muted);font-size:12.5px">${A.delineamento} · F = ${fmt(A.F, 2)} · P = ${A.P < 1e-4 ? "<0,0001" : fmt(A.P, 4)} · CV = ${fmt(A.CV, 2)}% · ${te[1]} = ${fmt(A.dif_minima ?? A.DMS, d + 1)}</span>` : `<span style="color:var(--muted)">Repetições insuficientes para a análise de variância.</span>`) + `</div>`;
   h += barChart(A, ix, sig) + `</div>`;
   h += `<h3>Médias por tratamento</h3><div class="tw"><table class="res" id="trtTable"><thead><tr><th>Tratamento</th><th>n</th><th>Média</th><th>Grupo</th><th>Desvio</th><th>Ganho s/ controle</th><th>Ganho %</th></tr></thead><tbody>` +
     A.grupos.map(g => `<tr><td>${esc((g.sigla || g.code) + " · " + (g.nome || ""))}${g.ctrl ? " <span class='pill'>controle</span>" : ""}</td><td>${g.n}</td><td>${fmt(g.media, d)}</td><td class="l">${g.letras || ""}</td><td>${fmt(g.desvio, d)}</td>
       <td class="${g.ganho > 0 ? "pos" : g.ganho < 0 ? "neg" : ""}">${g.ctrl || g.ganho == null ? "–" : (g.ganho > 0 ? "+" : "") + fmt(g.ganho, d)}</td><td class="${g.ganho > 0 ? "pos" : g.ganho < 0 ? "neg" : ""}">${g.ctrl || g.ganho_pct == null ? "–" : (g.ganho_pct > 0 ? "+" : "") + fmt(g.ganho_pct, 1) + "%"}</td></tr>`).join("") +
-    `</tbody></table></div><p class="hint" style="font-size:12px">Médias seguidas da mesma letra não diferem pelo teste DMS (t) a ${alpha * 100}%.</p>`;
+    `</tbody></table></div><p class="hint" style="font-size:12px">Médias seguidas da mesma letra não diferem pelo teste de ${te[0]} a ${alpha * 100}%.${ix.inv ? " Para falhas, quanto menor o valor, melhor." : ""}</p>`;
   const evo = done.length > 1 ? await lineChart(done, k, alpha) : "";
   if (evo) h += `<h3>Evolução entre os voos</h3><div class="card">${evo}</div>`;
-  const all = await Promise.all(IDXK.map(x => getStats(fid, x, alpha).catch(() => null)));
-  h += `<h3>Todos os índices neste voo</h3><div class="tw"><table class="res"><thead><tr><th>Tratamento</th>${IDXK.map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>` +
-    S.trial.tratamentos.map(t => `<tr><td>${esc((t.sigla || t.code) + " · " + (t.nome || ""))}</td>${all.map((a, i) => { const g = a && a.grupos.find(g => g.code === t.code); return `<td>${g ? fmt(g.media, IDX[IDXK[i]].d) + (a.P < alpha && g.letras ? " " + g.letras : "") : "–"}</td>`; }).join("")}</tr>`).join("") +
+  if (done.length > 1) h += await closureSection(done, alpha);
+  const ks0 = idxAvail(), all0 = await Promise.all(ks0.map(x => getStats(fid, x, alpha).catch(() => null)));
+  const KS = ks0.filter((x, i) => all0[i] && all0[i].grupos.length), all = all0.filter(a => a && a.grupos.length);
+  h += `<h3>Todos os índices neste voo</h3><div class="tw"><table class="res"><thead><tr><th>Tratamento</th>${KS.map(x => `<th>${x}${IDX[x].u ? " (" + IDX[x].u + ")" : ""}</th>`).join("")}</tr></thead><tbody>` +
+    S.trial.tratamentos.map(t => `<tr><td>${esc((t.sigla || t.code) + " · " + (t.nome || ""))}</td>${all.map((a, i) => { const g = a && a.grupos.find(g => g.code === t.code); return `<td>${g ? fmt(g.media, IDX[KS[i]].d) + (a.P < alpha && g.letras ? " " + g.letras : "") : "–"}</td>`; }).join("")}</tr>`).join("") +
     `<tr class="stat"><td>P (F)</td>${all.map(a => `<td>${a && a.P != null ? (a.P < 1e-4 ? "<0,0001" : fmt(a.P, 4)) : "–"}</td>`).join("")}</tr><tr class="stat"><td>CV %</td>${all.map(a => `<td>${a && a.CV != null ? fmt(a.CV, 2) : "–"}</td>`).join("")}</tr></tbody></table></div>`;
   body.innerHTML = h;
 }
-["rIdx", "rDate", "rAlpha"].forEach(i => $(i).onchange = renderResults);
+["rIdx", "rDate", "rAlpha", "rTest"].forEach(i => $(i).onchange = renderResults);
+/* fechamento do dossel: cobertura (CC) de cada tratamento ao longo dos voos e quando chega a 80% */
+const META_CC = 80;
+async function closureSection(fl, alpha) {
+  const st = await Promise.all(fl.map(f => getStats(f.id, "CC", alpha).catch(() => null)));
+  const dias = fl.map(f => f.data_voo ? Date.parse(f.data_voo + "T12:00:00") / 864e5 : null), temData = dias.every(v => v != null);
+  const rows = S.trial.tratamentos.map(t => {
+    const v = st.map(a => { const g = a && a.grupos.find(g => g.code === t.code); return g ? g.media : null; });
+    let quando = null, antes = false;
+    for (let i = 0; i < v.length; i++) { if (v[i] == null) continue; if (v[i] >= META_CC) { if (i === 0) { antes = true; quando = 0; break; } const j = i - 1; if (v[j] == null) { quando = i; break; } quando = j + (META_CC - v[j]) / (v[i] - v[j]); break; } }
+    let txt;
+    if (quando == null) {
+      const mx = Math.max(...v.filter(x => x != null)); txt = `ainda não (${fmt(mx, 1)}%)`;
+      const n = v.length - 1, ok = temData && n >= 1 && v[n] != null && v[n - 1] != null && v[n] > v[n - 1] && dias[n] > dias[n - 1];
+      if (ok) { const taxa = (v[n] - v[n - 1]) / (dias[n] - dias[n - 1]), dd = dias[n] + (META_CC - v[n]) / taxa; txt += `; no ritmo atual, por volta de ${new Date(dd * 864e5).toLocaleDateString("pt-BR")}`; }
+    }
+    else if (antes) txt = `já no 1º voo (${esc(fl[0].rotulo)})`;
+    else if (temData) { const i0 = Math.floor(quando), fr = quando - i0, dd = dias[i0] + fr * ((dias[i0 + 1] ?? dias[i0]) - dias[i0]); const dt = new Date(dd * 864e5); txt = dt.toLocaleDateString("pt-BR") + ` (${Math.round(dd - dias[0])} dias após o 1º voo)`; }
+    else { const i0 = Math.floor(quando); txt = fr2(quando) ? `entre ${esc(fl[i0].rotulo)} e ${esc(fl[Math.min(fl.length - 1, i0 + 1)].rotulo)}` : esc(fl[i0].rotulo); }
+    const ganho = v.filter(x => x != null); return { t, v, txt, dif: ganho.length > 1 ? ganho[ganho.length - 1] - ganho[0] : null };
+  });
+  const ch = await lineChart(fl, "CC", alpha, META_CC);
+  return `<h3>Fechamento do dossel</h3><div class="card"><p class="hint" style="margin-top:0">Cobertura vegetal (CC) de cada tratamento em cada voo. A linha tracejada marca ${META_CC}% de cobertura, quando o dossel é considerado fechado.${temData ? "" : " Preencha a data dos voos para ver a data estimada."}</p>${ch}
+    <div class="tw"><table class="res"><thead><tr><th>Tratamento</th>${fl.map(f => `<th>${esc(f.rotulo)}</th>`).join("")}<th>Ganho no período</th><th style="text-align:left">Chega a ${META_CC}%</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td>${esc((r.t.sigla || r.t.code) + " · " + (r.t.nome || ""))}</td>${r.v.map(x => `<td>${x == null ? "–" : fmt(x, 1)}</td>`).join("")}<td>${r.dif == null ? "–" : (r.dif > 0 ? "+" : "") + fmt(r.dif, 1) + " p.p."}</td><td style="text-align:left">${r.txt}</td></tr>`).join("") + `</tbody></table></div></div>`;
+}
+const fr2 = q => q - Math.floor(q) > 0.001;
 function niceTicks(lo, hi, n = 5) { if (lo === hi) { lo -= 1; hi += 1; } const st0 = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(st0)), st = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= st0); const a = Math.floor(lo / st) * st, b = Math.ceil(hi / st) * st, o = []; for (let v = a; v <= b + st / 2; v += st) o.push(+v.toFixed(10)); return o; }
 function barChart(A, ix, sig) {
   const G = A.grupos, W = 900, H = 300, L = 60, R = W - 14, T = 22, B = H - 44, vals = G.flatMap(g => [g.media + (g.desvio || 0)]);
@@ -532,16 +596,18 @@ function barChart(A, ix, sig) {
   return s + "</svg>";
 }
 const PAL = ["#1d8a3a", "#155fa6", "#d4563a", "#8a5cc2", "#e0a11b", "#1e9fa8", "#7a7f78", "#c2417e", "#5a8f1d", "#3d4fb8"];
-async function lineChart(fl, k, alpha) {
+async function lineChart(fl, k, alpha, ref) {
   const stats = await Promise.all(fl.map(f => getStats(f.id, k, alpha).catch(() => null)));
   const W = 900, H = 300, L = 60, R = W - 150, T = 16, B = H - 40;
   const series = S.trial.tratamentos.map((t, ti) => ({ t, c: PAL[ti % PAL.length], pts: stats.map(a => { const g = a && a.grupos.find(g => g.code === t.code); return g ? g.media : null; }) })).filter(s => s.pts.some(v => v != null));
   const all = series.flatMap(s => s.pts.filter(v => v != null)); if (!all.length) return "";
+  if (ref != null) all.push(ref);
   const tk = niceTicks(Math.min(...all), Math.max(...all)), lo = tk[0], hi = tk[tk.length - 1];
   const y = v => B - (v - lo) / (hi - lo) * (B - T), x = i => L + 20 + (R - L - 40) * i / (fl.length - 1);
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolução do índice entre os voos">`;
   tk.forEach(t => s += `<line class="gl" x1="${L}" x2="${R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t, Math.abs(t) < 10 ? 2 : 0)}</text>`);
   fl.forEach((f, i) => s += `<text class="ax" x="${x(i)}" y="${B + 20}" text-anchor="middle">${esc(f.rotulo)}</text>`);
+  if (ref != null) s += `<line x1="${L}" x2="${R}" y1="${y(ref)}" y2="${y(ref)}" stroke="var(--fg)" stroke-dasharray="5 4" opacity=".6"/><text class="ax" x="${R - 4}" y="${y(ref) - 6}" text-anchor="end">${ref}%</text>`;
   series.forEach((se, j) => {
     const pts = se.pts.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
     s += `<polyline points="${pts.map(p => p.join(",")).join(" ")}" fill="none" stroke="${se.c}" stroke-width="2.2"/>` + pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="${se.c}"/>`).join("");
@@ -549,7 +615,7 @@ async function lineChart(fl, k, alpha) {
   });
   return s + "</svg>";
 }
-$("expXlsx").onclick = () => download(`/api/ensaios/${S.trial.id}/exportar.xlsx?alpha=${$("rAlpha").value}`, `ensaio-${S.trial.id}.xlsx`);
+$("expXlsx").onclick = () => download(`/api/ensaios/${S.trial.id}/exportar.xlsx?alpha=${$("rAlpha").value}&teste=${curTest()}`, `ensaio-${S.trial.id}.xlsx`);
 $("expCsv").onclick = () => download(`/api/ensaios/${S.trial.id}/parcelas.csv`, `ensaio-${S.trial.id}-parcelas.csv`);
 $("copyTsv").onclick = () => {
   const t = $("trtTable"); if (!t) return; const txt = [...t.rows].map(r => [...r.cells].map(c => c.innerText.trim()).join("\t")).join("\n");

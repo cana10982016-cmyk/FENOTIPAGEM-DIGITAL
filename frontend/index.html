@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" href="img/favicon.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=5">
+<link rel="stylesheet" href="app.css?v=6">
 </head>
 <body>
 
@@ -110,7 +110,7 @@
 
       <section data-p="imagens" hidden>
         <h2>Voos de drone</h2>
-        <p class="hint">Envie um ortomosaico RGB por data de voo. GeoTIFF mantém a georreferência e a área em m². O servidor lê o arquivo em resolução total.</p>
+        <p class="hint">Envie um ortomosaico por data de voo (RGB ou multiespectral). GeoTIFF mantém a georreferência e a área em m². Para medir a altura das plantas, envie também o modelo 3D (DSM) do mesmo voo no cartão do voo.</p>
         <div class="row2">
           <div class="field"><label for="upLabel">Rótulo (ex.: 45 DAP)</label><input type="text" id="upLabel"></div>
           <div class="field"><label for="upDate">Data do voo</label><input type="date" id="upDate"></div>
@@ -150,6 +150,11 @@
         <div class="field"><label for="thrMode">Separação planta × solo (ExG)</label>
           <select id="thrMode"><option value="otsu">Automática (Otsu por imagem, entre 0,02 e 0,20)</option><option value="fixed">Limiar fixo</option></select></div>
         <div class="field" id="thrFixedF" hidden><label for="thrVal">Limiar ExG</label><input type="number" id="thrVal" step="0.01"></div>
+        <div class="row2">
+          <div class="field"><label for="espac">Espaçamento das linhas (m)</label><input type="number" id="espac" min="0.3" max="5" step="0.05"></div>
+          <div class="field"><label for="falhaMin">Falha a partir de (m)</label><input type="number" id="falhaMin" min="0.1" max="5" step="0.1"></div>
+        </div>
+        <p class="hint" style="margin-top:-4px">Usados no cálculo de falhas de plantio. A altura sai do modelo 3D (DSM) enviado em cada voo.</p>
         <div class="btns"><button class="btn primary" id="runBtn">Processar índices</button></div>
         <div class="status" id="runStatus" hidden></div>
         <h3>Data do voo</h3>
@@ -161,7 +166,7 @@
         <label class="chk"><input type="checkbox" id="lyGrid"> Índice em grade</label>
         <label class="chk"><input type="checkbox" id="lyMask"> Máscara de vegetação</label>
         <div class="field" style="margin-top:8px"><label for="idxSel">Índice</label><select id="idxSel"></select></div>
-        <div class="legend"><span id="lgMin">–</span><span class="bar" style="height:9px;margin:0;background:linear-gradient(90deg,#d7301f,#fc8d59,#fee08b,#d9ef8b,#91cf60,#1a9850)"></span><span id="lgMax">–</span></div>
+        <div class="legend"><span id="lgMin">–</span><span class="bar" id="lgBar" style="height:9px;margin:0;background:linear-gradient(90deg,#d7301f,#fc8d59,#fee08b,#d9ef8b,#91cf60,#1a9850)"></span><span id="lgMax">–</span></div>
         <p class="hint" id="idxDesc" style="margin-top:8px"></p>
       </section>
     </aside>
@@ -178,11 +183,12 @@
 
     <section class="results" id="results" hidden>
       <h2>Resultados</h2>
-      <p class="hint" style="color:var(--muted)">Médias por tratamento, análise de variância (DBC quando todos os tratamentos aparecem em todos os blocos) e teste DMS (t).</p>
+      <p class="hint" style="color:var(--muted)">Médias por tratamento, análise de variância (DBC quando todos os tratamentos aparecem em todos os blocos) e teste de médias (Tukey ou DMS).</p>
       <div class="ctrls">
         <div class="field"><label for="rIdx">Índice</label><select id="rIdx"></select></div>
         <div class="field"><label for="rDate">Voo</label><select id="rDate"></select></div>
         <div class="field"><label for="rAlpha">Significância</label><select id="rAlpha"><option value="0.05">5%</option><option value="0.1" selected>10%</option></select></div>
+        <div class="field"><label for="rTest">Teste de médias</label><select id="rTest"><option value="tukey" selected>Tukey</option><option value="dms">DMS (t)</option></select></div>
         <div class="btns" style="margin:0"><button class="btn" id="expXlsx">Exportar Excel</button><button class="btn" id="expCsv">Parcelas (CSV)</button><button class="btn" id="copyTsv">Copiar tabela</button></div>
       </div>
       <div id="resBody"></div>
@@ -200,6 +206,6 @@
   </form>
 </dialog>
 <div class="toast" id="toast" hidden></div>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

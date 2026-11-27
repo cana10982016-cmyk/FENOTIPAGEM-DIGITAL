@@ -73,6 +73,11 @@ class Flight(Base):
     limites: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [oeste, sul, leste, norte]
     otsu: Mapped[float | None] = mapped_column(Float, nullable=True)
     limiar_usado: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # bandas do ortomosaico {r, g, b, re, nir} (0 = não tem); vazio = RGB nas bandas 1, 2, 3
+    bandas: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # modelo digital de superfície (altura de plantas), opcional
+    dsm_arquivo: Mapped[str] = mapped_column(String(300), default="")
+    dsm_caminho: Mapped[str] = mapped_column(String(500), default="")
     # {plot_id: {n, area, CC, ExG, ..., cells: [{...}]}}
     resultados: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -102,6 +107,28 @@ def init_db() -> None:
         with engine.begin() as c:
             c.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{config.DB_SCHEMA}"'))
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """Colunas novas em tabelas que já existem (o create_all não altera tabelas)."""
+    from sqlalchemy import inspect as sa_inspect
+
+    insp = sa_inspect(engine)
+    schema = config.DB_SCHEMA if (config.DB_SCHEMA and not _sqlite) else None
+    with engine.begin() as c:
+        for table in Base.metadata.sorted_tables:
+            have = {col["name"] for col in insp.get_columns(table.name, schema=schema)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                typ = col.type.compile(dialect=engine.dialect)
+                default = ""
+                if col.default is not None and getattr(col.default, "is_scalar", False):
+                    v = col.default.arg
+                    default = f" DEFAULT '{v}'" if isinstance(v, str) else f" DEFAULT {v}"
+                name = f'"{schema}"."{table.name}"' if schema else f'"{table.name}"'
+                c.execute(text(f'ALTER TABLE {name} ADD COLUMN "{col.name}" {typ}{default}'))
 
 
 def get_session():

@@ -120,6 +120,7 @@ class TrialIn(BaseModel):
 class FlightIn(BaseModel):
     rotulo: str | None = None
     data_voo: str | None = None
+    bandas: dict | None = None
 
 
 def user_out(u: User) -> dict:
@@ -128,7 +129,8 @@ def user_out(u: User) -> dict:
 
 def flight_out(f: Flight, with_results: bool = False) -> dict:
     d = {k: getattr(f, k) for k in ("id", "ensaio_id", "rotulo", "data_voo", "arquivo", "tamanho", "status", "erro", "crs", "georref",
-                                     "largura", "altura", "gsd_m", "previa_w", "previa_h", "limites", "otsu", "limiar_usado")}
+                                     "largura", "altura", "gsd_m", "previa_w", "previa_h", "limites", "otsu", "limiar_usado",
+                                     "bandas", "dsm_arquivo")}
     d["processado_em"] = f.processado_em.isoformat() if f.processado_em else None
     d["tem_resultados"] = bool(f.resultados)
     if with_results:
@@ -265,7 +267,7 @@ def delete_trial(tid: int, u: User = Depends(current_user), s: Session = Depends
     t = get_trial(s, tid)
     if not (u.admin or t.criado_por == u.id):
         raise HTTPException(403, "Só quem criou o ensaio ou o administrador pode excluí-lo.")
-    paths = [p for f in t.voos for p in (f.caminho, f.previa) if p]
+    paths = [p for f in t.voos for p in (f.caminho, f.previa, f.dsm_caminho) if p]
     fids = [f.id for f in t.voos]
     if fids:
         s.execute(delete(PreviewImage).where(PreviewImage.voo_id.in_(fids)))
@@ -291,7 +293,7 @@ def _prepare(fid: int) -> None:
             info = raster.inspect(f.caminho)
             f.largura, f.altura, f.crs, f.georref, f.gsd_m = info["width"], info["height"], info["crs"], info["georref"], info["gsd_m"]
             out = config.PREVIEW_DIR / f"{Path(f.caminho).stem}.png"
-            pv = raster.make_preview(f.caminho, out, config.PREVIEW_MAX_PX)
+            pv = raster.make_preview(f.caminho, out, config.PREVIEW_MAX_PX, f.bandas)
             f.previa, f.previa_w, f.previa_h, f.limites, f.otsu = str(out), pv["previa_w"], pv["previa_h"], pv["limites"], pv["otsu"]
             _store_preview(s, f)
             f.status, f.erro = "pronto", ""
@@ -324,10 +326,20 @@ def upload_flight(tid: int, bg: BackgroundTasks, arquivo: UploadFile = File(...)
 
 
 @app.put("/api/voos/{fid}")
-def update_flight(fid: int, body: FlightIn, _: User = Depends(current_user), s: Session = Depends(get_session)):
+def update_flight(fid: int, body: FlightIn, bg: BackgroundTasks, _: User = Depends(current_user), s: Session = Depends(get_session)):
     f = get_flight(s, fid)
-    for k, v in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    bandas = data.pop("bandas", None)
+    for k, v in data.items():
         setattr(f, k, v)
+    if bandas is not None and bandas != (f.bandas or {}):
+        if not config.PERMITIR_ENVIO:
+            raise HTTPException(409, "Troque as bandas pelo computador do servidor.")
+        f.bandas = {k: int(bandas.get(k) or 0) for k in ("r", "g", "b", "re", "nir")}
+        f.status, f.erro, f.resultados = "preparando", "", None
+        s.commit()
+        bg.add_task(_prepare, f.id)
+        return flight_out(f)
     s.commit()
     return flight_out(f)
 
@@ -335,7 +347,7 @@ def update_flight(fid: int, body: FlightIn, _: User = Depends(current_user), s: 
 @app.delete("/api/voos/{fid}")
 def delete_flight(fid: int, _: User = Depends(current_user), s: Session = Depends(get_session)):
     f = get_flight(s, fid)
-    for p in (f.caminho, f.previa):
+    for p in (f.caminho, f.previa, f.dsm_caminho):
         if p:
             Path(p).unlink(missing_ok=True)
     s.execute(delete(PreviewImage).where(PreviewImage.voo_id == f.id))
@@ -347,6 +359,41 @@ def delete_flight(fid: int, _: User = Depends(current_user), s: Session = Depend
 @app.get("/api/voos/{fid}")
 def read_flight(fid: int, _: User = Depends(current_user), s: Session = Depends(get_session)):
     return flight_out(get_flight(s, fid), with_results=True)
+
+
+@app.post("/api/voos/{fid}/dsm")
+def upload_dsm(fid: int, arquivo: UploadFile = File(...), _: User = Depends(current_user), s: Session = Depends(get_session)):
+    """Modelo digital de superfície (DSM) do mesmo voo, para a altura de plantas."""
+    if not config.PERMITIR_ENVIO:
+        raise HTTPException(409, "Este endereço é só para consulta. Envie os arquivos pelo computador do servidor.")
+    f = get_flight(s, fid)
+    name = Path(arquivo.filename or "dsm.tif").name
+    if not re.search(r"\.(tif|tiff)$", name, re.I):
+        raise HTTPException(400, "Envie o DSM em GeoTIFF (.tif).")
+    dest = config.UPLOAD_DIR / f"{f.ensaio_id}_{uuid.uuid4().hex[:10]}_dsm.tif"
+    with dest.open("wb") as out:
+        shutil.copyfileobj(arquivo.file, out, length=8 * 1024 * 1024)
+    from . import raster
+    try:
+        raster.inspect_dsm(dest)
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, str(e) if isinstance(e, RasterError) else f"Não consegui ler o DSM: {e}")
+    if f.dsm_caminho:
+        Path(f.dsm_caminho).unlink(missing_ok=True)
+    f.dsm_arquivo, f.dsm_caminho = name, str(dest)
+    s.commit()
+    return flight_out(f)
+
+
+@app.delete("/api/voos/{fid}/dsm")
+def delete_dsm(fid: int, _: User = Depends(current_user), s: Session = Depends(get_session)):
+    f = get_flight(s, fid)
+    if f.dsm_caminho:
+        Path(f.dsm_caminho).unlink(missing_ok=True)
+    f.dsm_arquivo, f.dsm_caminho = "", ""
+    s.commit()
+    return flight_out(f)
 
 
 @app.get("/api/voos/{fid}/previa.png")
@@ -382,7 +429,7 @@ def _process(tid: int, fids: list[int]) -> None:
                 continue
             try:
                 thr = _threshold(t, f)
-                f.resultados = raster.compute_flight(f.caminho, t.croqui, plots, thr)
+                f.resultados = raster.compute_flight(f.caminho, t.croqui, plots, thr, f.bandas, f.dsm_caminho or None, t.ajustes)
                 f.limiar_usado = thr
                 f.processado_em = datetime.now(timezone.utc)
                 f.status, f.erro = "processado", ""
@@ -422,7 +469,7 @@ def process_trial(tid: int, bg: BackgroundTasks, voo: int | None = None, _: User
 # ------------------------------------------------------------------ resultados
 
 @app.get("/api/ensaios/{tid}/estatistica")
-def trial_stats(tid: int, voo: int, indice: str = "CC", alpha: float = Query(0.1, gt=0, lt=1),
+def trial_stats(tid: int, voo: int, indice: str = "CC", alpha: float = Query(0.1, gt=0, lt=1), teste: str = "tukey",
                 _: User = Depends(current_user), s: Session = Depends(get_session)):
     t = get_trial(s, tid)
     f = get_flight(s, voo)
@@ -430,7 +477,7 @@ def trial_stats(tid: int, voo: int, indice: str = "CC", alpha: float = Query(0.1
         raise HTTPException(404, "Voo não pertence a este ensaio.")
     if indice not in INDICES:
         raise HTTPException(400, "Índice desconhecido.")
-    return stats.analyze(plots_of(t.croqui, t.tratamentos or []), f.resultados or {}, t.tratamentos or [], indice, alpha)
+    return stats.analyze(plots_of(t.croqui, t.tratamentos or []), f.resultados or {}, t.tratamentos or [], indice, alpha, teste)
 
 
 @app.get("/api/ensaios/{tid}/parcelas.geojson")
@@ -442,7 +489,8 @@ def trial_geojson(tid: int, _: User = Depends(current_user), s: Session = Depend
 def _plot_rows(t: Trial):
     plots = plots_of(t.croqui or {}, t.tratamentos or [])
     keys = list(INDICES)
-    head = ["voo", "data", "parcela", "tratamento", "sigla", "produto", "bloco", "linha", "coluna", "pixels", "area_m2", *keys]
+    extra = ["falha_m", "linha_m", "n_linhas", "alt_max"]
+    head = ["voo", "data", "parcela", "tratamento", "sigla", "produto", "bloco", "linha", "coluna", "pixels", "area_m2", *keys, *extra]
     rows = []
     for f in t.voos:
         res = f.resultados or {}
@@ -452,7 +500,7 @@ def _plot_rows(t: Trial):
                 continue
             trt = p.trt or {}
             rows.append([f.rotulo, f.data_voo, p.id, trt.get("code"), trt.get("sigla"), trt.get("nome"), p.bloco, p.r + 1, p.c + 1,
-                         v.get("n"), v.get("area"), *[v.get(k) for k in keys]])
+                         v.get("n"), v.get("area"), *[v.get(k) for k in keys], *[v.get(k) for k in extra]])
     return head, rows
 
 
@@ -470,7 +518,7 @@ def export_csv(tid: int, _: User = Depends(current_user), s: Session = Depends(g
 
 
 @app.get("/api/ensaios/{tid}/exportar.xlsx")
-def export_xlsx(tid: int, alpha: float = 0.1, _: User = Depends(current_user), s: Session = Depends(get_session)):
+def export_xlsx(tid: int, alpha: float = 0.1, teste: str = "tukey", _: User = Depends(current_user), s: Session = Depends(get_session)):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
 
@@ -497,7 +545,7 @@ def export_xlsx(tid: int, alpha: float = 0.1, _: User = Depends(current_user), s
         c.font, c.fill = bold, fill
 
     ws3 = wb.create_sheet("Tratamentos")
-    ws3.append(["voo", "índice", "tratamento", "sigla", "n", "média", "grupo", "desvio", "ganho", "ganho %", "delineamento", "F", "P", "CV %", "DMS"])
+    ws3.append(["voo", "índice", "tratamento", "sigla", "n", "média", "grupo", "desvio", "ganho", "ganho %", "delineamento", "F", "P", "CV %", "DMS", "Tukey (dif. mínima)"])
     for c in ws3[1]:
         c.font, c.fill = bold, fill
     plots = plots_of(t.croqui or {}, t.tratamentos or [])
@@ -505,10 +553,12 @@ def export_xlsx(tid: int, alpha: float = 0.1, _: User = Depends(current_user), s
         if not f.resultados:
             continue
         for k in INDICES:
-            a = stats.analyze(plots, f.resultados, t.tratamentos or [], k, alpha)
+            a = stats.analyze(plots, f.resultados, t.tratamentos or [], k, alpha, teste)
+            if not a["grupos"]:
+                continue
             for g in a["grupos"]:
                 ws3.append([f.rotulo, k, g["code"], g["sigla"], g["n"], g["media"], g.get("letras", ""), g["desvio"], g.get("ganho"),
-                            g.get("ganho_pct"), a.get("delineamento"), a.get("F"), a.get("P"), a.get("CV"), a.get("DMS")])
+                            g.get("ganho_pct"), a.get("delineamento"), a.get("F"), a.get("P"), a.get("CV"), a.get("DMS"), a.get("HSD")])
     buf = io.BytesIO()
     wb.save(buf)
     return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
