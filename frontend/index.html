@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Fenotipagem Digital</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<title>INOVAAGRO · Fenotipagem</title>
+<meta name="theme-color" content="#5e8145">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -12,7 +15,7 @@
 <!-- login -->
 <div class="center" id="vLogin" hidden>
   <form class="login" id="loginForm">
-    <div class="logo" style="margin-bottom:14px"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="logo" style="margin-bottom:14px"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
     <h1>Entrar</h1>
     <p>Use o e-mail e a senha cadastrados pelo administrador.</p>
     <div class="field"><label for="lEmail">E-mail</label><input type="text" id="lEmail" autocomplete="username" required></div>
@@ -25,7 +28,7 @@
 <!-- lista de ensaios -->
 <div id="vList" hidden>
   <header class="top">
-    <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="logo"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
     <div class="trial-name"></div>
     <div class="user"><span id="uName"></span><button class="btn" id="teamBtn" hidden>Equipe</button><button class="btn" id="pwBtn">Senha</button><button class="btn" id="logoutBtn">Sair</button></div>
   </header>
@@ -39,7 +42,7 @@
 <div id="vTeam" hidden>
   <header class="top">
     <button class="back" id="teamBack">← Ensaios</button>
-    <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="logo"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
     <div class="trial-name">Equipe</div>
   </header>
   <div class="page">
@@ -60,7 +63,7 @@
 <div class="app" id="vWork" hidden>
   <header class="top">
     <button class="back" id="backList">← Ensaios</button>
-    <div class="logo"><b>Fenotipagem</b> <span>Digital</span></div>
+    <div class="logo"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO"><span>Fenotipagem</span></div>
     <div class="trial-name" id="trialName"></div>
     <span class="saved" id="saved"></span>
     <nav class="steps" id="steps" aria-label="Etapas">
@@ -156,9 +159,9 @@
     <main class="view" id="view">
       <canvas id="cv" aria-label="Visualizador da imagem de drone com as parcelas"></canvas>
       <div class="ov zoom"><button id="zin" aria-label="Aproximar">+</button><button id="zout" aria-label="Afastar">−</button><button id="zfit" aria-label="Enquadrar" style="font-size:13px">⤢</button></div>
-      <div class="ov brand">AgroComCiência</div>
+      <div class="ov brand"><img class="logo-claro" src="img/logo.png" alt="INOVAAGRO" style="height:20px;display:block"><img class="logo-escuro" src="img/logo-escuro.png" alt="INOVAAGRO" style="height:20px"></div>
       <div class="ov mode" id="modeBadge" hidden></div>
-      <div class="ov credit">Gerado por Fenotipagem Digital Serviços Agrícolas</div>
+      <div class="ov credit">Gerado por INOVAAGRO</div>
       <div class="ov tip" id="tip" hidden></div>
       <div class="empty" id="emptyMsg" hidden><div><b id="emptyTitle">Nenhum voo pronto</b><br><span id="emptyText">Vá em Voos e envie um ortomosaico.</span></div></div>
     </main>

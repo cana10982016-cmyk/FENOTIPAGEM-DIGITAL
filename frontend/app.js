@@ -1,5 +1,5 @@
 "use strict";
-/* Fenotipagem Digital — site. Fala com a API em /api. */
+/* INOVAAGRO Fenotipagem — site. Fala com a API em /api. */
 
 const $ = id => document.getElementById(id);
 const fmt = (x, d) => x == null || !isFinite(x) ? "–" : Number(x).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -403,14 +403,14 @@ function draw() {
     const lab = []; if (p && (S.step === "croqui" || $("lyTrt").checked) && p.trt) lab.push(p.trt.sigla || p.trt.code); if (p && (S.step === "croqui" || $("lyPlotId").checked)) lab.push(p.id);
     if (lab.length) {
       const ctr = scr(bil(q, .5, .5)), fs = Math.max(10, Math.min(16, S.view.s * Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) / 5));
-      ctx.font = `600 ${fs}px "IBM Plex Mono",monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.fillStyle = "#fff";
+      ctx.font = `600 ${fs}px Inter,system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.fillStyle = "#fff";
       const t = lab.join(" · "); ctx.strokeText(t, ctr[0], ctr[1]); ctx.fillText(t, ctr[0], ctr[1]);
-      if (showPlot && R && !showGrid && R[k] != null) { const v = fmt(R[k], IDX[k].d); ctx.font = `500 ${fs * .85}px "IBM Plex Mono",monospace`; ctx.strokeText(v, ctr[0], ctr[1] + fs * 1.1); ctx.fillText(v, ctr[0], ctr[1] + fs * 1.1); }
+      if (showPlot && R && !showGrid && R[k] != null) { const v = fmt(R[k], IDX[k].d); ctx.font = `500 ${fs * .85}px Inter,system-ui,sans-serif`; ctx.strokeText(v, ctr[0], ctr[1] + fs * 1.1); ctx.fillText(v, ctr[0], ctr[1] + fs * 1.1); }
     }
   }
   if (S.step === "croqui") {
     ctx.strokeStyle = "#ffd54a"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); poly(cp); ctx.stroke(); ctx.setLineDash([]);
-    cp.forEach((pt, i) => { const s = scr(pt); ctx.beginPath(); ctx.arc(s[0], s[1], 9, 0, 7); ctx.fillStyle = "#ffd54a"; ctx.fill(); ctx.strokeStyle = "#222"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = "#222"; ctx.font = '700 11px "IBM Plex Mono",monospace'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(i + 1), s[0], s[1] + .5); });
+    cp.forEach((pt, i) => { const s = scr(pt); ctx.beginPath(); ctx.arc(s[0], s[1], 9, 0, 7); ctx.fillStyle = "#ffd54a"; ctx.fill(); ctx.strokeStyle = "#222"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = "#222"; ctx.font = '700 11px Inter,system-ui,sans-serif'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(i + 1), s[0], s[1] + .5); });
   }
   if (S.pick && S.pick.pts.length) S.pick.pts.forEach(w => { const s = scr(w); ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, 7); ctx.fillStyle = "#4fc3f7"; ctx.fill(); });
 }

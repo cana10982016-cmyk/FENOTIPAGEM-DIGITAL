@@ -1,26 +1,34 @@
 /* Layout: workbench — left step panel (ensaio, imagens, croqui, mapa) beside a pan/zoom drone viewer; results replace the viewer */
 :root{
-  --bg:#eef2ec; --surface:#ffffff; --surface-2:#f6f8f4; --fg:#16211a; --muted:#5a685e; --line:#d6ded4;
-  --green:#1d8a3a; --green-soft:#d8eedc; --blue:#155fa6; --on-accent:#ffffff; --warn:#b4570f; --neg:#c3372c;
-  --viewer:#1c2a20; --panel:rgba(255,255,255,.95);
-  --f-display:"Archivo",system-ui,sans-serif; --f-body:"Inter",system-ui,sans-serif; --f-data:"IBM Plex Mono",ui-monospace,monospace;
+  /* Identidade visual do INOVAAGRO (mesmas cores do app): setas #5E8145, "Inova" #87B44B, "Agro" #B1D243 */
+  --bg:#fafaf9; --surface:#ffffff; --surface-2:#f5f5f3; --fg:#18181b; --muted:#6b6b72; --line:#e7e7e3;
+  --green:#4f7a3a; --green-soft:#f1f6ec; --blue:#5e8145; --lime:#b1d243; --on-accent:#ffffff; --warn:#d97706; --neg:#dc2626;
+  --viewer:#26302a; --panel:rgba(255,255,255,.95);
+  --f-display:"Inter","Segoe UI",system-ui,sans-serif; --f-body:"Inter","Segoe UI",system-ui,sans-serif; --f-data:"Inter","Segoe UI",system-ui,sans-serif;
+  color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0e1511; --surface:#16201a; --surface-2:#1b2720; --fg:#e4ece5; --muted:#98a99d; --line:#2a3a30;
-  --green:#4cc06a; --green-soft:#1f3a27; --blue:#5aa3e8; --on-accent:#07110b; --warn:#f0a35e; --neg:#ff7a6e;
-  --viewer:#0a110c; --panel:rgba(22,32,26,.95); color-scheme:dark}}
+  --bg:#0f110e; --surface:#171a15; --surface-2:#1f231c; --fg:#ececea; --muted:#9c9f95; --line:#2b3027;
+  --green:#87b44b; --green-soft:#223019; --blue:#87b44b; --on-accent:#10140c; --warn:#fab219; --neg:#ef7c72;
+  --viewer:#101411; --panel:rgba(23,26,21,.95); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0e1511; --surface:#16201a; --surface-2:#1b2720; --fg:#e4ece5; --muted:#98a99d; --line:#2a3a30;
-  --green:#4cc06a; --green-soft:#1f3a27; --blue:#5aa3e8; --on-accent:#07110b; --warn:#f0a35e; --neg:#ff7a6e;
-  --viewer:#0a110c; --panel:rgba(22,32,26,.95); color-scheme:dark}
+  --bg:#0f110e; --surface:#171a15; --surface-2:#1f231c; --fg:#ececea; --muted:#9c9f95; --line:#2b3027;
+  --green:#87b44b; --green-soft:#223019; --blue:#87b44b; --on-accent:#10140c; --warn:#fab219; --neg:#ef7c72;
+  --viewer:#101411; --panel:rgba(23,26,21,.95); color-scheme:dark}
 [hidden]{display:none!important}
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5}
 .app{display:flex;flex-direction:column;min-height:100%}
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line);background:var(--surface)}
-.logo{font-family:var(--f-display);font-weight:800;font-size:17px;letter-spacing:.01em;white-space:nowrap}
-.logo b{color:var(--green)} .logo span{color:var(--blue)}
+.logo{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.logo img{height:26px;width:auto;display:block}
+.logo span{font-weight:600;font-size:14px;color:var(--muted);padding-left:10px;border-left:1px solid var(--line)}
+.logo-escuro{display:none!important}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .logo-claro{display:none!important}:root:not([data-theme="light"]) .logo-escuro{display:block!important}}
+:root[data-theme="dark"] .logo-claro{display:none!important}
+:root[data-theme="dark"] .logo-escuro{display:block!important}
+table,.num{font-variant-numeric:tabular-nums}
 .trial-name{color:var(--muted);font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 nav.steps{display:flex;flex-wrap:wrap;gap:4px}
 nav.steps button{font:600 13px var(--f-body);border:1px solid transparent;background:transparent;color:var(--muted);padding:6px 11px;border-radius:6px;cursor:pointer;display:flex;gap:6px;align-items:center}
@@ -137,3 +145,4 @@ body{margin:0}
 dialog#pwDlg{color:var(--fg);max-width:360px;width:calc(100% - 32px);box-sizing:border-box}
 dialog#pwDlg::backdrop{background:rgba(0,0,0,.45)}
 dialog#pwDlg input[type=password]{font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;box-sizing:border-box}
+input[type=radio],input[type=checkbox]{accent-color:var(--green)}

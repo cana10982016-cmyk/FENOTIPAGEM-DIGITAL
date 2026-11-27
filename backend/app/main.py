@@ -1,4 +1,4 @@
-"""API da Fenotipagem Digital."""
+"""API do INOVAAGRO Fenotipagem."""
 from __future__ import annotations
 
 import csv
@@ -83,7 +83,7 @@ def _store_missing_previews(s: Session) -> None:
                 log.exception("falha ao guardar a pré-visualização do voo %s", f.id)
 
 
-app = FastAPI(title="Fenotipagem Digital", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="INOVAAGRO Fenotipagem", version="0.1.0", lifespan=lifespan)
 
 
 # ------------------------------------------------------------------ esquemas
