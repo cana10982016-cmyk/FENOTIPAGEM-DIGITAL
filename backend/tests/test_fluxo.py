@@ -152,7 +152,7 @@ def test_trocar_senha(client):
 def test_modo_consulta(client, monkeypatch):
     from app import config
     monkeypatch.setattr(config, "PERMITIR_ENVIO", False)
-    assert client.get("/api/saude").json() == {"ok": True, "envio": False}
+    assert client.get("/api/saude").json()["envio"] is False
     t = client.post("/api/ensaios", json={"nome": "Consulta"}).json()
     r = client.post(f"/api/ensaios/{t['id']}/voos", files={"arquivo": ("a.png", b"x", "image/png")})
     assert r.status_code == 409

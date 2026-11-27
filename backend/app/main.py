@@ -51,6 +51,9 @@ async def lifespan(app: FastAPI):
                 f.status, f.erro = "erro", "O servidor reiniciou durante o processamento. Processe de novo."
             s.commit()
             _store_missing_previews(s)
+    if config.PERMITIR_ENVIO:
+        from . import odm
+        odm.start_worker(_prepare)
     yield
 
 
@@ -130,7 +133,7 @@ def user_out(u: User) -> dict:
 def flight_out(f: Flight, with_results: bool = False) -> dict:
     d = {k: getattr(f, k) for k in ("id", "ensaio_id", "rotulo", "data_voo", "arquivo", "tamanho", "status", "erro", "crs", "georref",
                                      "largura", "altura", "gsd_m", "previa_w", "previa_h", "limites", "otsu", "limiar_usado",
-                                     "bandas", "dsm_arquivo")}
+                                     "bandas", "dsm_arquivo", "odm_fotos", "odm_qualidade", "odm_progresso")}
     d["processado_em"] = f.processado_em.isoformat() if f.processado_em else None
     d["tem_resultados"] = bool(f.resultados)
     if with_results:
@@ -162,11 +165,26 @@ def get_flight(s: Session, fid: int) -> Flight:
 
 # ------------------------------------------------------------------ login e usuários
 
+_ODM_CACHE = {"t": 0.0, "v": None}
+
+
+def _odm_info():
+    import time
+    if not config.PERMITIR_ENVIO:
+        return None
+    if time.time() - _ODM_CACHE["t"] > 30:
+        from . import odm
+        _ODM_CACHE["v"], _ODM_CACHE["t"] = odm.info(), time.time()
+    return _ODM_CACHE["v"]
+
+
 @app.get("/api/saude")
 def health():
     if DB_ERRO:
         return {"ok": False, "erro_banco": DB_ERRO}
-    return {"ok": True, "envio": config.PERMITIR_ENVIO}
+    i = _odm_info()
+    return {"ok": True, "envio": config.PERMITIR_ENVIO, "odm": bool(i),
+            "odm_info": {k: i.get(k) for k in ("version", "engineVersion", "taskQueueCount", "maxImages")} if i else None}
 
 
 @app.post("/api/auth/login")
@@ -325,6 +343,73 @@ def upload_flight(tid: int, bg: BackgroundTasks, arquivo: UploadFile = File(...)
     return flight_out(f)
 
 
+class FotosIn(BaseModel):
+    rotulo: str = ""
+    data_voo: str = ""
+    qualidade: str = "completo"
+
+
+def _need_envio():
+    if not config.PERMITIR_ENVIO:
+        raise HTTPException(409, "Este endereço é só para consulta. Envie as fotos pelo computador do servidor.")
+
+
+@app.post("/api/ensaios/{tid}/fotos", status_code=201)
+def start_photos(tid: int, body: FotosIn, _: User = Depends(current_user), s: Session = Depends(get_session)):
+    """Cria um voo que será montado pelo OpenDroneMap a partir das fotos (enviadas em lotes depois)."""
+    _need_envio()
+    t = get_trial(s, tid)
+    q = body.qualidade if body.qualidade in ("rapido", "completo") else "completo"
+    f = Flight(ensaio_id=t.id, rotulo=body.rotulo or body.data_voo or "Fotos do drone", data_voo=body.data_voo,
+               arquivo="Fotos do drone", status="fotos", odm_qualidade=q, odm_fotos=0, tamanho=0)
+    s.add(f)
+    s.commit()
+    from . import odm
+    odm.fotos_dir(f.id).mkdir(parents=True, exist_ok=True)
+    return flight_out(f)
+
+
+@app.post("/api/voos/{fid}/fotos")
+def upload_photos(fid: int, fotos: list[UploadFile] = File(...), _: User = Depends(current_user), s: Session = Depends(get_session)):
+    _need_envio()
+    from . import odm
+    f = get_flight(s, fid)
+    if f.status != "fotos":
+        raise HTTPException(409, "Este voo já foi enviado para a montagem.")
+    d = odm.fotos_dir(f.id)
+    d.mkdir(parents=True, exist_ok=True)
+    n, tam = 0, 0
+    for up in fotos:
+        name = Path(up.filename or "").name
+        if Path(name).suffix.lower() not in odm.FOTO_EXT:
+            continue
+        dest = d / name
+        with dest.open("wb") as out:
+            shutil.copyfileobj(up.file, out, length=4 * 1024 * 1024)
+        n, tam = n + 1, tam + dest.stat().st_size
+    f.odm_fotos = sum(1 for p in d.iterdir() if p.suffix.lower() in odm.FOTO_EXT)
+    f.tamanho = sum(p.stat().st_size for p in d.iterdir())
+    f.arquivo = f"{f.odm_fotos} fotos do drone"
+    s.commit()
+    return flight_out(f)
+
+
+@app.post("/api/voos/{fid}/montar")
+def assemble(fid: int, _: User = Depends(current_user), s: Session = Depends(get_session)):
+    _need_envio()
+    f = get_flight(s, fid)
+    if f.status not in ("fotos", "erro") or not f.odm_fotos:
+        raise HTTPException(409, "Envie as fotos antes de montar.")
+    if f.odm_fotos < 5:
+        raise HTTPException(400, "Envie pelo menos 5 fotos com sobreposição.")
+    if f.odm_uuid:
+        from . import odm
+        odm.remove_task(f.odm_uuid)
+    f.status, f.erro, f.odm_uuid, f.odm_progresso = "montando", "", "", None
+    s.commit()
+    return flight_out(f)
+
+
 @app.put("/api/voos/{fid}")
 def update_flight(fid: int, body: FlightIn, bg: BackgroundTasks, _: User = Depends(current_user), s: Session = Depends(get_session)):
     f = get_flight(s, fid)
@@ -350,6 +435,11 @@ def delete_flight(fid: int, _: User = Depends(current_user), s: Session = Depend
     for p in (f.caminho, f.previa, f.dsm_caminho):
         if p:
             Path(p).unlink(missing_ok=True)
+    if f.odm_uuid or f.odm_fotos:
+        from . import odm
+        if f.odm_uuid and f.status == "montando":
+            odm.remove_task(f.odm_uuid)
+        shutil.rmtree(odm.fotos_dir(f.id), ignore_errors=True)
     s.execute(delete(PreviewImage).where(PreviewImage.voo_id == f.id))
     s.delete(f)
     s.commit()

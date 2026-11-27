@@ -74,9 +74,10 @@ $("pwForm").addEventListener("submit", async e => {
 });
 
 /* no site da nuvem não há envio de imagens nem processamento */
-let ENVIO = true;
+let ENVIO = true, ODM = false;
 fetch("/api/saude").then(r => r.json()).then(h => {
-  ENVIO = h.envio !== false;
+  ENVIO = h.envio !== false; ODM = !!h.odm && ENVIO;
+  $("odmBox").hidden = !ODM; $("odmOff").hidden = ODM || !ENVIO;
   $("drop").hidden = !ENVIO; $("noUpload").hidden = ENVIO;
   if (!ENVIO) { $("runBtn").disabled = true; $("runBtn").title = "Processe pelo computador do servidor"; }
 }).catch(() => { });
@@ -184,8 +185,8 @@ let polling = false;
 async function pollIfBusy() {
   if (polling) return; polling = true;
   try {
-    while (S.trial && S.flights.some(f => f.status === "preparando" || f.status === "calculando")) {
-      await sleep(2500); if (!S.trial) break; await refreshTrial(); runStatusFromFlights();
+    while (S.trial && S.flights.some(f => ["preparando", "calculando", "montando"].includes(f.status))) {
+      await sleep(S.flights.some(f => f.status === "montando") ? 8000 : 2500); if (!S.trial) break; await refreshTrial(); runStatusFromFlights();
     }
   } finally { polling = false; }
   runStatusFromFlights(); if (S.step === "resultados") renderResults();
@@ -273,7 +274,7 @@ function upload(file) {
   xhr.onerror = () => { $("upTxt").textContent = "A conexão caiu durante o envio. Tente de novo."; };
   xhr.send(fd);
 }
-const STATUS = { recebido: ["Recebido", ""], preparando: ["Preparando", "run"], pronto: ["Pronto", "ok"], calculando: ["Calculando", "run"], processado: ["Processado", "ok"], erro: ["Erro", "err"] };
+const STATUS = { fotos: ["Fotos incompletas", "err"], montando: ["Montando", "run"], recebido: ["Recebido", ""], preparando: ["Preparando", "run"], pronto: ["Pronto", "ok"], calculando: ["Calculando", "run"], processado: ["Processado", "ok"], erro: ["Erro", "err"] };
 function renderFlights() {
   const L = $("imgList"); L.innerHTML = "";
   if (!S.flights.length) { L.innerHTML = '<p class="hint">Nenhum voo ainda.</p>'; return; }
@@ -282,7 +283,8 @@ function renderFlights() {
     const th = document.createElement("canvas"); th.width = 128; th.height = 96;
     const b = S.bmp[f.id]; if (b) { const x = th.getContext("2d"); const k = Math.max(128 / b.width, 96 / b.height); x.drawImage(b, (128 - b.width * k) / 2, (96 - b.height * k) / 2, b.width * k, b.height * k); }
     d.appendChild(th);
-    const st = STATUS[f.status] || [f.status, ""];
+    let st = STATUS[f.status] || [f.status, ""];
+    if (f.status === "montando") st = [f.odm_progresso == null ? "Na fila do OpenDroneMap" : f.odm_progresso < 0 ? `Enviando fotos ${fmt(-f.odm_progresso, 0)}%` : `Montando ${fmt(f.odm_progresso, 0)}%`, "run"];
     const m = document.createElement("div");
     m.innerHTML = `<input type="text" value="${esc(f.rotulo)}" aria-label="Rótulo do voo"><div class="meta">${esc(f.arquivo)} · ${fmt(f.tamanho / 1048576, 1)} MB<br>
       ${f.largura ? `${f.largura}×${f.altura} px · ` : ""}${f.gsd_m ? fmt(f.gsd_m * 100, 1) + " cm/px" : f.status === "pronto" || f.status === "processado" ? "sem georref." : ""} <span class="badge ${st[1]}">${st[0]}</span></div>`;
@@ -312,6 +314,32 @@ function renderFlights() {
     if (f.erro) { const e = document.createElement("p"); e.className = "err"; e.textContent = f.erro; d.appendChild(e); }
     L.appendChild(d);
   });
+}
+
+/* ---------------------------------------------------------------- montagem pelas fotos (OpenDroneMap) */
+$("odmDir").onclick = () => $("odmDirIn").click();
+$("odmFiles").onclick = () => $("odmFilesIn").click();
+["odmDirIn", "odmFilesIn"].forEach(id => $(id).onchange = e => { const fs = [...e.target.files]; e.target.value = ""; sendPhotos(fs); });
+async function sendPhotos(all) {
+  const fotos = all.filter(f => /\.(jpe?g|tiff?|png|dng)$/i.test(f.name));
+  if (fotos.length < 5) { toast(fotos.length ? "São necessárias pelo menos 5 fotos." : "Nenhuma foto encontrada nessa pasta."); return; }
+  const txt = $("odmTxt"), bar = $("odmBar"); $("odmProg").hidden = false; $("odmDir").disabled = $("odmFiles").disabled = true;
+  const total = fotos.reduce((a, f) => a + f.size, 0); let sent = 0;
+  try {
+    const date = $("upDate").value || guessDate(fotos[0].name);
+    const f = await API.post(`/api/ensaios/${S.trial.id}/fotos`, { rotulo: $("upLabel").value || (date ? date.split("-").reverse().join("/") : "Fotos do drone"), data_voo: date || "", qualidade: $("odmQual").value });
+    for (let i = 0; i < fotos.length; i += 8) {
+      const fd = new FormData(); fotos.slice(i, i + 8).forEach(x => fd.append("fotos", x, x.name));
+      for (let tent = 0; ; tent++) { try { await API.upload(`/api/voos/${f.id}/fotos`, fd); break; } catch (er) { if (tent >= 2) throw er; await sleep(2000); } }
+      sent += fotos.slice(i, i + 8).reduce((a, x) => a + x.size, 0);
+      bar.style.width = (sent / total * 100) + "%"; txt.textContent = `Enviando fotos: ${Math.min(i + 8, fotos.length)} de ${fotos.length} (${fmt(sent / 1048576, 0)} de ${fmt(total / 1048576, 0)} MB)`;
+    }
+    await API.post(`/api/voos/${f.id}/montar`);
+    txt.textContent = `${fotos.length} fotos recebidas. A montagem começou. Pode fechar esta tela: o andamento aparece no cartão do voo.`;
+    $("upLabel").value = ""; $("upDate").value = "";
+    await refreshTrial(); renderFlights(); pollIfBusy();
+  } catch (er) { txt.textContent = "O envio parou: " + er.message + ". O voo ficou como “Fotos incompletas”; exclua e envie de novo."; await refreshTrial(); renderFlights(); }
+  finally { $("odmDir").disabled = $("odmFiles").disabled = false; }
 }
 
 /* ---------------------------------------------------------------- coordenadas */

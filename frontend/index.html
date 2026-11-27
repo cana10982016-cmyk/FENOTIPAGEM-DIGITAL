@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" href="img/favicon.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="app.css?v=7">
+<link rel="stylesheet" href="app.css?v=8">
 </head>
 <body>
 
@@ -119,6 +119,15 @@
         <div class="drop" id="drop" tabindex="0" role="button">Arraste o ortomosaico aqui ou clique para escolher<br><small>.tif, .tiff, .jpg, .png</small></div>
         <input type="file" id="fileIn" accept=".tif,.tiff,.jpg,.jpeg,.png" hidden>
         <div id="upProg" hidden><div class="status" id="upTxt"></div><div class="bar"><span id="upBar"></span></div></div>
+        <h3>Montar a partir das fotos do drone</h3>
+        <div id="odmBox" hidden>
+          <p class="hint">O OpenDroneMap monta o ortomosaico (e o modelo 3D para a altura) a partir das fotos do voo. Use o rótulo e a data acima.</p>
+          <div class="field"><label for="odmQual">Resultado</label><select id="odmQual"><option value="completo">Ortomosaico + altura (DSM), mais demorado</option><option value="rapido">Só ortomosaico, mais rápido</option></select></div>
+          <div class="btns"><button class="btn primary" id="odmDir">Escolher a pasta das fotos</button><button class="btn" id="odmFiles">Escolher fotos</button></div>
+          <input type="file" id="odmDirIn" webkitdirectory multiple hidden><input type="file" id="odmFilesIn" accept=".jpg,.jpeg,.tif,.tiff,.png,.dng" multiple hidden>
+          <div id="odmProg" hidden><div class="status" id="odmTxt"></div><div class="bar"><span id="odmBar"></span></div></div>
+        </div>
+        <p class="hint" id="odmOff">Para montar o ortomosaico direto das fotos, o OpenDroneMap precisa estar ligado ao sistema. Enquanto isso, envie o ortomosaico pronto acima.</p>
         <h3>Voos do ensaio</h3>
         <div class="imgs" id="imgList"></div>
       </section>
@@ -206,6 +215,6 @@
   </form>
 </dialog>
 <div class="toast" id="toast" hidden></div>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

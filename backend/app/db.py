@@ -78,6 +78,11 @@ class Flight(Base):
     # modelo digital de superfície (altura de plantas), opcional
     dsm_arquivo: Mapped[str] = mapped_column(String(300), default="")
     dsm_caminho: Mapped[str] = mapped_column(String(500), default="")
+    # montagem do ortomosaico a partir das fotos (OpenDroneMap): fotos -> montando -> preparando
+    odm_uuid: Mapped[str] = mapped_column(String(64), default="")
+    odm_fotos: Mapped[int] = mapped_column(Integer, default=0)
+    odm_qualidade: Mapped[str] = mapped_column(String(20), default="")
+    odm_progresso: Mapped[float | None] = mapped_column(Float, nullable=True)
     # {plot_id: {n, area, CC, ExG, ..., cells: [{...}]}}
     resultados: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

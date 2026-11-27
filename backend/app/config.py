@@ -11,6 +11,7 @@ def _env(name: str, default: str = "") -> str:
 DATA_DIR = Path(_env("DATA_DIR", str(Path(__file__).resolve().parents[2] / "dados")))
 UPLOAD_DIR = DATA_DIR / "voos"
 PREVIEW_DIR = DATA_DIR / "previas"
+FOTOS_DIR = DATA_DIR / "fotos"
 
 # SQLite por padrão; em produção use o Postgres do Supabase:
 # postgresql+psycopg://postgres:SENHA@db.xxxx.supabase.co:5432/postgres
@@ -48,5 +49,9 @@ FRONTEND_DIR = Path(_env("FRONTEND_DIR", str(Path(__file__).resolve().parents[2]
 
 
 def ensure_dirs() -> None:
-    for d in (DATA_DIR, UPLOAD_DIR, PREVIEW_DIR):
+    for d in (DATA_DIR, UPLOAD_DIR, PREVIEW_DIR, FOTOS_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+# OpenDroneMap (NodeODM) para montar o ortomosaico e o DSM a partir das fotos do drone
+ODM_URL = _env("ODM_URL", "http://localhost:3000").rstrip("/")
+ODM_TOKEN = _env("ODM_TOKEN", "")
