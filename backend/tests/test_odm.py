@@ -144,3 +144,69 @@ def test_odm_fora_do_ar(client):
     v = client.get(f"/api/voos/{f['id']}").json()
     assert v["status"] == "montando" and "não está acessível" in v["erro"]
     assert client.delete(f"/api/voos/{f['id']}").status_code == 200
+
+
+# ---------------------------------------------------------------- servidor sob demanda (Hetzner de mentira)
+hz = FastAPI()
+HZ = {"servers": [], "deleted": [], "creates": []}
+
+
+@hz.get("/servers")
+def hz_list(label_selector: str = ""):
+    return {"servers": HZ["servers"]}
+
+
+@hz.post("/servers", status_code=201)
+async def hz_create(request: Request):
+    body = await request.json()
+    HZ["creates"].append(body)
+    if body["server_type"] == "cpx62":
+        return JSONResponse({"error": {"code": "resource_unavailable", "message": "sem estoque"}}, 412)
+    s = {"id": 77, "status": "running", "created": "2026-11-28T00:00:00+00:00", "labels": body["labels"],
+         "public_net": {"ipv4": {"ip": "127.0.0.1"}}}
+    HZ["servers"].append(s)
+    return {"server": s}
+
+
+@hz.delete("/servers/{sid}")
+def hz_delete(sid: int):
+    HZ["deleted"].append(sid)
+    HZ["servers"] = [s for s in HZ["servers"] if s["id"] != sid]
+    return {"action": {"id": 1}}
+
+
+def test_servidor_sob_demanda(client, monkeypatch):
+    from datetime import datetime, timezone
+
+    from app import nuvem
+    port = _free_port()
+    srv = uvicorn.Server(uvicorn.Config(hz, host="127.0.0.1", port=port, log_level="warning"))
+    threading.Thread(target=srv.run, daemon=True).start()
+    for _ in range(50):
+        if srv.started:
+            break
+        time.sleep(0.1)
+    odm_port = int(config.ODM_URL.rsplit(":", 1)[1])
+    monkeypatch.setattr(nuvem, "API", f"http://127.0.0.1:{port}")
+    monkeypatch.setattr(nuvem, "PORTA", odm_port)
+    monkeypatch.setattr(config, "HCLOUD_TOKEN", "x")
+    monkeypatch.setattr(config, "ODM_URL", "http://127.0.0.1:9")  # sem nó fixo: só o da nuvem
+    monkeypatch.setattr(nuvem, "_idade_h", lambda s: 0.2)
+    try:
+        tid = client.post("/api/ensaios", json={"nome": "Nuvem"}).json()["id"]
+        f = client.post(f"/api/ensaios/{tid}/fotos", json={"qualidade": "completo"}).json()
+        client.post(f"/api/voos/{f['id']}/fotos", files=[("fotos", (f"a{i}.jpg", b"x", "image/jpeg")) for i in range(6)])
+        client.post(f"/api/voos/{f['id']}/montar")
+        for _ in range(10):
+            odm.step(_prepare)
+            v = client.get(f"/api/voos/{f['id']}").json()
+            if v["status"] != "montando":
+                break
+        assert v["status"] == "pronto", v["erro"]
+        assert [c["server_type"] for c in HZ["creates"]][:2] == ["cpx62", "cpx62"] or HZ["creates"][-1]["server_type"] != "cpx62"
+        assert "--token" in HZ["creates"][-1]["user_data"]
+        odm.step(_prepare)  # nada mais para montar: apaga o servidor
+        assert HZ["deleted"] == [77] and not HZ["servers"]
+    finally:
+        odm._node.update(url="", token="")
+        srv.should_exit = True

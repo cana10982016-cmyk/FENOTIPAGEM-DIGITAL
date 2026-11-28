@@ -55,3 +55,7 @@ def ensure_dirs() -> None:
 # OpenDroneMap (NodeODM) para montar o ortomosaico e o DSM a partir das fotos do drone
 ODM_URL = _env("ODM_URL", "http://localhost:3000").rstrip("/")
 ODM_TOKEN = _env("ODM_TOKEN", "")
+# servidor de montagem sob demanda na Hetzner Cloud (opcional): liga só quando há fotos para montar
+HCLOUD_TOKEN = _env("HCLOUD_TOKEN", "")
+HCLOUD_TIPOS = [x.strip() for x in _env("HCLOUD_TIPOS", "cpx62,ccx33,cx53,cpx51,cx52").split(",") if x.strip()]
+HCLOUD_LOCAIS = [x.strip() for x in _env("HCLOUD_LOCAIS", "hel1,fsn1,nbg1").split(",") if x.strip()]

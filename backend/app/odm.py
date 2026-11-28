@@ -1,7 +1,8 @@
 """Montagem do ortomosaico e do DSM a partir das fotos do drone, pelo OpenDroneMap (API do NodeODM).
 
 Funciona com qualquer nó NodeODM: o OpenDroneMap instalado em outro computador da rede, num Mac,
-ou a nuvem do WebODM Lightning (ODM_URL + ODM_TOKEN no .env).
+ou a nuvem do WebODM Lightning (ODM_URL + ODM_TOKEN no .env). Com HCLOUD_TOKEN no .env, o sistema
+liga um servidor na Hetzner só enquanto há fotos para montar (ver nuvem.py).
 
 Fluxo de um voo: fotos (recebendo as fotos) -> montando (enviado ao ODM) -> preparando -> pronto.
 Uma linha de execução em segundo plano envia as fotos, acompanha o progresso e baixa o resultado.
@@ -19,7 +20,7 @@ from pathlib import Path
 import requests
 from sqlalchemy import select
 
-from . import config
+from . import config, nuvem
 from .db import Flight, SessionLocal
 
 log = logging.getLogger("fenotipagem.odm")
@@ -47,10 +48,18 @@ class OdmError(Exception):
     pass
 
 
+_node = {"url": "", "token": ""}  # servidor sob demanda em uso (Hetzner), senão ODM_URL do .env
+
+
+def _base() -> str:
+    return _node["url"] or config.ODM_URL
+
+
 def _url(path: str) -> str:
-    u = config.ODM_URL + path
-    if config.ODM_TOKEN:
-        u += ("&" if "?" in u else "?") + "token=" + config.ODM_TOKEN
+    u = _base() + path
+    tok = _node["token"] if _node["url"] else config.ODM_TOKEN
+    if tok:
+        u += ("&" if "?" in u else "?") + "token=" + tok
     return u
 
 
@@ -66,6 +75,8 @@ def _check(r: requests.Response) -> dict:
 
 def info(timeout: float = 3) -> dict | None:
     """Informações do nó ODM, ou None se não estiver acessível."""
+    if nuvem.ativo() and not _node["url"]:
+        return {"version": "servidor sob demanda (Hetzner)", "taskQueueCount": 0, "maxImages": None}
     try:
         return _check(requests.get(_url("/info"), timeout=timeout))
     except Exception:  # noqa: BLE001
@@ -82,7 +93,9 @@ def _submit(f: Flight) -> str:
         raise OdmError("Envie pelo menos 5 fotos com sobreposição para montar o ortomosaico.")
     opts = QUALIDADES.get(f.odm_qualidade or "completo", QUALIDADES["completo"])
     # o NodeODM só lê os campos em multipart/form-data (com urlencoded ignora as opções)
-    form = {"name": (None, f"voo-{f.id} {f.rotulo}"[:100]), "options": (None, json.dumps(opts))}
+    # outputs: o pacote final leva só o ortomosaico e o DSM (bem menor para baixar)
+    form = {"name": (None, f"voo-{f.id} {f.rotulo}"[:100]), "options": (None, json.dumps(opts)),
+            "outputs": (None, json.dumps(["odm_orthophoto/odm_orthophoto.tif", "odm_dem/dsm.tif"]))}
     d = _check(requests.post(_url("/task/new/init"), files=form, timeout=60))
     uid = d["uuid"]
     for i in range(0, len(fotos), LOTE):
@@ -164,9 +177,47 @@ def step(prepare) -> None:
         _step_lock.release()
 
 
+def _nuvem(ids: list[int]) -> bool:
+    """Liga/desliga o servidor da Hetzner. Devolve True quando o servidor está pronto para receber tarefas."""
+    if not nuvem.ativo():
+        return True
+    try:
+        if not ids:
+            if nuvem.desligar_todos("(sem fotos para montar)"):
+                _node.update(url="", token="")
+            return False
+        srv = nuvem.garantir()
+        if srv["idade_h"] > nuvem.MAX_HORAS:
+            nuvem.desligar_todos("(passou do tempo máximo)")
+            _node.update(url="", token="")
+            raise nuvem.NuvemError(f"A montagem passou de {nuvem.MAX_HORAS} horas e o servidor foi desligado.")
+        _node.update(url=srv["url"], token=srv["token"])
+        if not srv["pronto"]:
+            for fid in ids:
+                with SessionLocal() as s:
+                    f = s.get(Flight, fid)
+                    if f and not f.odm_uuid:
+                        f.erro = "Ligando o servidor de montagem na nuvem (leva uns 5 minutos)…"
+                        s.commit()
+        return srv["pronto"]
+    except (nuvem.NuvemError, requests.RequestException) as e:
+        grave = "token" in str(e) or "tempo máximo" in str(e)
+        for fid in ids:
+            with SessionLocal() as s:
+                f = s.get(Flight, fid)
+                if f:
+                    if grave:
+                        f.status = "erro"
+                    f.erro = f"Servidor na nuvem: {e}" + ("" if grave else " Vou tentar de novo.")
+                    s.commit()
+        return False
+
+
 def _step(prepare) -> None:
     with SessionLocal() as s:
         ids = list(s.scalars(select(Flight.id).where(Flight.status == "montando")))
+    if not _nuvem(ids):
+        return
     for fid in ids:
         with SessionLocal() as s:
             f = s.get(Flight, fid)
@@ -175,7 +226,7 @@ def _step(prepare) -> None:
             try:
                 if not f.odm_uuid:
                     if info() is None:
-                        f.erro = f"O OpenDroneMap não está acessível em {config.ODM_URL}. Vou tentar de novo."
+                        f.erro = f"O OpenDroneMap não está acessível em {_base()}. Vou tentar de novo."
                         s.commit()
                         continue
                     f.erro = ""
