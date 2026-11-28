@@ -138,6 +138,8 @@ class TrialIn(BaseModel):
     tratamentos: list | None = None
     croqui: dict | None = None
     ajustes: dict | None = None
+    campo: list | None = None
+    ficha: dict | None = None
 
 
 class FlightIn(BaseModel):
@@ -164,6 +166,7 @@ def flight_out(f: Flight, with_results: bool = False) -> dict:
 def trial_out(t: Trial, with_results: bool = False) -> dict:
     return {"id": t.id, "nome": t.nome, "cliente": t.cliente, "local": t.local, "cultura": t.cultura, "variedade": t.variedade,
             "observacoes": t.observacoes, "tratamentos": t.tratamentos or [], "croqui": t.croqui or {}, "ajustes": t.ajustes or {},
+            "campo": t.campo or [], "ficha": t.ficha or {},
             "criado_em": t.criado_em.isoformat() if t.criado_em else None,
             "atualizado_em": t.atualizado_em.isoformat() if t.atualizado_em else None,
             "voos": [flight_out(f, with_results) for f in t.voos]}
@@ -582,15 +585,91 @@ def process_trial(tid: int, bg: BackgroundTasks, voo: int | None = None, _: User
 # ------------------------------------------------------------------ resultados
 
 @app.get("/api/ensaios/{tid}/estatistica")
-def trial_stats(tid: int, voo: int, indice: str = "CC", alpha: float = Query(0.1, gt=0, lt=1), teste: str = "tukey",
-                _: User = Depends(current_user), s: Session = Depends(get_session)):
+def trial_stats(tid: int, voo: int | None = None, indice: str = "CC", alpha: float = Query(0.1, gt=0, lt=1), teste: str = "tukey",
+                aval: str | None = None, _: User = Depends(current_user), s: Session = Depends(get_session)):
     t = get_trial(s, tid)
+    if aval:
+        from . import campo
+        a = next((x for x in (t.campo or []) if str(x.get("id")) == aval), None)
+        if not a:
+            raise HTTPException(404, "Avaliação de campo não encontrada.")
+        return stats.analyze(plots_of(t.croqui, t.tratamentos or []), campo.valores(a), t.tratamentos or [], indice, alpha, teste)
+    if voo is None:
+        raise HTTPException(400, "Informe o voo ou a avaliação.")
     f = get_flight(s, voo)
     if f.ensaio_id != t.id:
         raise HTTPException(404, "Voo não pertence a este ensaio.")
     if indice not in INDICES:
         raise HTTPException(400, "Índice desconhecido.")
     return stats.analyze(plots_of(t.croqui, t.tratamentos or []), f.resultados or {}, t.tratamentos or [], indice, alpha, teste)
+
+
+def _source_values(s: Session, t: Trial, src: str) -> tuple[str, dict]:
+    """'v<id>' = voo de drone, 'c<id>' = avaliação de campo. Devolve (rótulo, {parcela: {var: valor}})."""
+    from . import campo
+    if src.startswith("c"):
+        a = next((x for x in (t.campo or []) if str(x.get("id")) == src[1:]), None)
+        if not a:
+            raise HTTPException(404, "Avaliação de campo não encontrada.")
+        return a.get("rotulo") or "Avaliação", campo.valores(a)
+    try:
+        f = get_flight(s, int(src.lstrip("v")))
+    except ValueError:
+        raise HTTPException(400, "Fonte inválida.")
+    if f.ensaio_id != t.id:
+        raise HTTPException(404, "Voo não pertence a este ensaio.")
+    return f.rotulo, {k: {kk: vv for kk, vv in v.items() if kk != "cells"} for k, v in (f.resultados or {}).items()}
+
+
+@app.get("/api/ensaios/{tid}/correlacao")
+def correlation(tid: int, fx: str, fy: str, vx: list[str] | None = Query(None), vy: list[str] | None = Query(None),
+                nivel: str = "parcela", _: User = Depends(current_user), s: Session = Depends(get_session)):
+    """Correlação de Pearson entre variáveis de duas fontes (voo × avaliação de campo), por parcela ou por média de tratamento."""
+    import math as _m
+
+    from scipy import stats as _st
+    t = get_trial(s, tid)
+    lx, X = _source_values(s, t, fx)
+    ly, Y = _source_values(s, t, fy)
+    plots = [p for p in plots_of(t.croqui or {}, t.tratamentos or []) if p.trt and p.id in X and p.id in Y]
+    vx = vx or sorted({k for v in X.values() for k, x in v.items() if isinstance(x, (int, float)) and k in INDICES})
+    vy = vy or sorted({k for v in Y.values() for k, x in v.items() if isinstance(x, (int, float))})
+
+    def pares(a, b):
+        if nivel == "tratamento":
+            grp: dict = {}
+            for p in plots:
+                xa, yb = X[p.id].get(a), Y[p.id].get(b)
+                if xa is None or yb is None:
+                    continue
+                g = grp.setdefault(p.trt.get("code"), [[], [], p.trt])
+                g[0].append(float(xa))
+                g[1].append(float(yb))
+            return [{"id": (g[2].get("sigla") or c), "trt": c, "x": sum(g[0]) / len(g[0]), "y": sum(g[1]) / len(g[1])} for c, g in grp.items()]
+        out = []
+        for p in plots:
+            xa, yb = X[p.id].get(a), Y[p.id].get(b)
+            if xa is not None and yb is not None and _m.isfinite(float(xa)) and _m.isfinite(float(yb)):
+                out.append({"id": p.id, "trt": p.trt.get("code"), "x": float(xa), "y": float(yb)})
+        return out
+
+    def corr(pts):
+        n = len(pts)
+        if n < 3:
+            return {"n": n, "r": None, "P": None}
+        xs, ys = [q["x"] for q in pts], [q["y"] for q in pts]
+        if max(xs) - min(xs) < 1e-12 or max(ys) - min(ys) < 1e-12:
+            return {"n": n, "r": None, "P": None}
+        r, P = _st.pearsonr(xs, ys)
+        lr = _st.linregress(xs, ys)
+        return {"n": n, "r": float(r), "R2": float(r * r), "P": float(P), "a": float(lr.intercept), "b": float(lr.slope)}
+
+    matriz = [{"x": a, "y": b, **corr(pares(a, b))} for a in vx for b in vy]
+    det = None
+    if len(vx) == 1 and len(vy) == 1:
+        pts = pares(vx[0], vy[0])
+        det = {"pontos": pts, **corr(pts)}
+    return stats._clean({"fonte_x": lx, "fonte_y": ly, "nivel": nivel, "vx": vx, "vy": vy, "matriz": matriz, "detalhe": det})
 
 
 @app.get("/api/ensaios/{tid}/parcelas.geojson")
@@ -674,6 +753,36 @@ def export_xlsx(tid: int, alpha: float = 0.1, teste: str = "tukey", _: User = De
                 ws3.append([f.rotulo, k, g["code"], g["sigla"], g["n"], g["media"], g.get("letras", ""), g["desvio"], g.get("ganho"),
                             g.get("ganho_pct"), a.get("delineamento"), a.get("F"), a.get("P"), a.get("CV"), a.get("teste_nome"),
                             a.get("dif_minima"), *((a.get("pressupostos") or {}).get(x) for x in ("shapiro_P", "bartlett_P", "levene_P"))])
+    # avaliações de campo: valores por parcela e análise por variável
+    from . import campo as campo_mod
+    avs = [a for a in (t.campo or []) if a.get("valores")]
+    if avs:
+        ws4 = wb.create_sheet("Campo (parcelas)")
+        allv = []
+        for a in avs:
+            for v in campo_mod.variaveis(a):
+                if v not in allv:
+                    allv.append(v)
+        ws4.append(["avaliação", "data", "parcela", "tratamento", "sigla", "bloco", *allv])
+        for c in ws4[1]:
+            c.font, c.fill = bold, fill
+        for a in avs:
+            vals = campo_mod.valores(a)
+            for p in plots:
+                r = vals.get(p.id) or {}
+                if not r:
+                    continue
+                trt = p.trt or {}
+                ws4.append([a.get("rotulo"), a.get("data"), p.id, trt.get("code"), trt.get("sigla"), p.bloco, *[r.get(v) for v in allv]])
+        for a in avs:
+            vals = campo_mod.valores(a)
+            for k in campo_mod.variaveis(a):
+                an = stats.analyze(plots, vals, t.tratamentos or [], k, alpha, teste)
+                for g in an["grupos"]:
+                    ws3.append([f"Campo: {a.get('rotulo')}", k, g["code"], g["sigla"], g["n"], g["media"], g.get("letras", ""), g["desvio"],
+                                g.get("ganho"), g.get("ganho_pct"), an.get("delineamento"), an.get("F"), an.get("P"), an.get("CV"),
+                                an.get("teste_nome"), an.get("dif_minima"),
+                                *((an.get("pressupostos") or {}).get(x) for x in ("shapiro_P", "bartlett_P", "levene_P"))])
     buf = io.BytesIO()
     wb.save(buf)
     return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

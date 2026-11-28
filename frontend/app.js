@@ -194,12 +194,12 @@ async function pollIfBusy() {
 
 /* salvar automático */
 let saveT = null, dirty = false;
-function save() { dirty = true; $("saved").textContent = "Salvando…"; clearTimeout(saveT); saveT = setTimeout(flushSave, 700); }
+function save() { campoRev++; dirty = true; $("saved").textContent = "Salvando…"; clearTimeout(saveT); saveT = setTimeout(flushSave, 700); }
 async function flushSave() {
   if (!dirty || !S.trial) return; dirty = false; clearTimeout(saveT);
   const t = S.trial;
   try {
-    await API.put("/api/ensaios/" + t.id, { nome: t.nome, cliente: t.cliente, local: t.local, cultura: t.cultura, variedade: t.variedade, observacoes: t.observacoes, tratamentos: t.tratamentos, croqui: t.croqui, ajustes: t.ajustes });
+    await API.put("/api/ensaios/" + t.id, { nome: t.nome, cliente: t.cliente, local: t.local, cultura: t.cultura, variedade: t.variedade, observacoes: t.observacoes, tratamentos: t.tratamentos, croqui: t.croqui, ajustes: t.ajustes, campo: t.campo || [], ficha: t.ficha || {} });
     $("saved").textContent = "Salvo";
   } catch (e) { $("saved").textContent = "Não salvou"; toast(e.message); }
 }
@@ -211,19 +211,19 @@ function go(step) {
   document.querySelectorAll("#steps a").forEach(b => b.setAttribute("aria-current", b.dataset.s === step ? "page" : "false"));
   document.body.classList.remove("nav-open");
   document.querySelectorAll("#side section").forEach(s => s.hidden = s.dataset.p !== step);
-  const res = step === "resultados";
-  $("results").hidden = !res; $("view").hidden = res; $("side").hidden = res;
-  $("work").style.gridTemplateColumns = res ? "1fr" : "";
-  if (res) { flushSave(); renderResults(); } else { resize(); draw(); }
+  const res = step === "resultados", cmp = step === "campo", full = res || cmp;
+  $("results").hidden = !res; $("campoView").hidden = !cmp; $("view").hidden = full; $("side").hidden = full;
+  $("work").style.gridTemplateColumns = full ? "1fr" : "";
+  if (res) { flushSave(); renderResults(); } else if (cmp) { renderCampo(); } else { resize(); draw(); }
   if (step !== "croqui") setPick(null);
   markDone();
 }
 function markDone() {
   if (!S.trial) return;
-  const ok = { ensaio: S.trial.tratamentos.length > 0, imagens: S.flights.some(f => f.status === "pronto" || f.status === "processado"), croqui: !!C().corners && parsedPlots().valid, mapa: S.flights.some(f => f.tem_resultados) };
+  const ok = { ensaio: S.trial.tratamentos.length > 0, imagens: S.flights.some(f => f.status === "pronto" || f.status === "processado"), croqui: !!C().corners && parsedPlots().valid, mapa: S.flights.some(f => f.tem_resultados), campo: (S.trial.campo || []).some(a => Object.keys(a.valores || {}).length) };
   document.querySelectorAll("#steps a").forEach(b => b.classList.toggle("done", !!ok[b.dataset.s]));
   $("trialName").textContent = S.trial.nome || "Ensaio";
-  crumb(S.trial.nome || "Ensaio", { ensaio: "Ensaio", imagens: "Voos", croqui: "Croqui", mapa: "Mapa", resultados: "Resultados" }[S.step] || "");
+  crumb(S.trial.nome || "Ensaio", { ensaio: "Ensaio", imagens: "Voos", croqui: "Croqui", mapa: "Mapa", campo: "Campo", resultados: "Resultados" }[S.step] || "");
 }
 document.querySelectorAll("#steps a").forEach(b => b.addEventListener("click", e => { e.preventDefault(); go(b.dataset.s); }));
 
@@ -553,6 +553,72 @@ const setDesc = () => $("idxDesc").textContent = (IDX[curIdx()] || IDX.CC).desc;
 $("idxSel").onchange = () => { setDesc(); draw(); };
 ["lyTrt", "lyPlotId", "lyPlot", "lyGrid", "lyMask"].forEach(id => $(id).onchange = draw);
 
+/* ---------------------------------------------------------------- avaliações de campo */
+const CV = {
+  TCH: ["Toneladas de cana por hectare", "t/ha", 1], ATR: ["Açúcar total recuperável", "kg/t", 1], TAH: ["Toneladas de açúcar por hectare", "t/ha", 2],
+  POL: ["Pol da cana", "%", 2], BRIX: ["Brix", "%", 2], FIBRA: ["Fibra", "%", 2], AR: ["Açúcares redutores", "%", 2], PUREZA: ["Pureza", "%", 1],
+  BAGACO: ["Bagaço", "t/ha", 1], PALHA: ["Palha", "t/ha", 1], ENERGIA: ["Energia (cogeração)", "MWh/ha", 1],
+  COMPR: ["Comprimento do colmo", "cm", 1], DIAM: ["Diâmetro do colmo", "cm", 2], PERF: ["Número de perfilhos", "nº", 1], ALT_CAMPO: ["Altura medida no campo", "cm", 1],
+};
+const CVN = { BAGACO: "Bagaço", COMPR: "Comprimento", DIAM: "Diâmetro", ALT_CAMPO: "Altura", ENERGIA: "Energia", PERF: "Perfilhos", PUREZA: "Pureza", FIBRA: "Fibra", BRIX: "Brix", POL: "Pol" };
+const cvName = k => CVN[k] || k;
+// os índices de campo entram no mesmo catálogo usado pelos gráficos e tabelas
+for (const [k, [l, u, d]] of Object.entries(CV)) IDX[k] = { l: ["TCH", "ATR", "TAH", "AR"].includes(k) ? `${l} (${k})` : l, u, d, campo: true, desc: k === "TAH" ? "TCH × ATR / 1000." : "Medido no campo." };
+const avVars = a => { const v = [...(a.vars || [])]; if (v.includes("TCH") && v.includes("ATR") && !v.includes("TAH")) v.push("TAH"); return v; };
+const num = v => { if (v == null || String(v).trim() === "") return null; const x = +String(v).replace(",", "."); return isFinite(x) ? x : null; };
+function avVal(a, pid, k) { const r = (a.valores || {})[pid] || {}; if (k === "TAH" && num(r.TAH) == null) { const t = num(r.TCH), at = num(r.ATR); return t != null && at != null ? t * at / 1000 : null; } return num(r[k]); }
+let curAv = null;
+function renderCampo() {
+  const T = S.trial; T.campo = T.campo || [];
+  if (!T.campo.find(a => a.id === curAv)) curAv = T.campo.length ? T.campo[T.campo.length - 1].id : null;
+  $("avTabs").innerHTML = T.campo.map(a => `<button class="btn ${a.id === curAv ? "primary" : ""}" data-av="${a.id}">${esc(a.rotulo || "Avaliação")}</button>`).join("") + `<button class="btn" id="avNew">+ Nova avaliação</button>`;
+  $("avTabs").querySelectorAll("[data-av]").forEach(b => b.onclick = () => { curAv = b.dataset.av; renderCampo(); });
+  $("avNew").onclick = () => { const n = T.campo.length + 1, prev = T.campo[T.campo.length - 1]; T.campo.push({ id: "a" + Date.now().toString(36), rotulo: `${n}ª avaliação`, data: "", vars: prev ? [...prev.vars] : ["TCH", "ATR"], valores: {} }); curAv = T.campo[T.campo.length - 1].id; save(); renderCampo(); markDone(); };
+  const a = T.campo.find(x => x.id === curAv), body = $("avBody");
+  if (!a) { body.innerHTML = '<div class="card"><b>Nenhuma avaliação de campo ainda.</b><p class="hint">Clique em “+ Nova avaliação” para digitar ou colar do Excel os valores de TCH, ATR e outras medidas por parcela.</p></div>'; return; }
+  const pp = parsedPlots().plots.slice().sort((x, y) => (+x.trt?.code || 0) - (+y.trt?.code || 0) || String(x.bloco || "").localeCompare(String(y.bloco || "")) || x.id.localeCompare(y.id));
+  if (!pp.length) { body.innerHTML = '<div class="card">Preencha a identificação das parcelas no Croqui antes de lançar as avaliações.</div>'; return; }
+  const vs = avVars(a);
+  body.innerHTML = `<div class="card"><div class="row3" style="align-items:end">
+      <div class="field"><label for="avRot">Nome da avaliação</label><input type="text" id="avRot" value="${esc(a.rotulo || "")}"></div>
+      <div class="field"><label for="avData">Data</label><input type="date" id="avData" value="${esc(a.data || "")}"></div>
+      <div class="btns" style="margin:0"><button class="btn" id="avPaste">Colar do Excel</button><button class="btn" id="avDel" style="color:var(--neg)">Excluir avaliação</button></div></div>
+    <div class="field"><label>Variáveis medidas</label><div class="chips">${Object.keys(CV).filter(k => k !== "TAH").map(k => `<label class="chk chip"><input type="checkbox" data-v="${k}" ${a.vars.includes(k) ? "checked" : ""}> ${cvName(k)}</label>`).join("")}</div></div>
+    <div id="avPasteBox" hidden><p class="hint">Cole a planilha com a 1ª linha de títulos: a coluna da parcela (ex.: 1A ou como está no croqui) e as colunas das variáveis (TCH, ATR, Pol…).</p><textarea id="avPasteTxt" placeholder="Parcela&#9;TCH&#9;ATR&#10;1A&#9;98,5&#9;132,1"></textarea><div class="btns"><button class="btn primary" id="avPasteOk">Aplicar</button></div><div class="status" id="avPasteMsg" hidden></div></div>
+  </div>
+  <div class="tw"><table class="res ed-grid"><thead><tr><th>Parcela</th><th>Tratamento</th><th>Bloco</th>${vs.map(k => `<th>${cvName(k)}${CV[k] ? ` (${CV[k][1]})` : ""}</th>`).join("")}</tr></thead><tbody>
+  ${pp.map(p => `<tr><td>${esc(p.id)}</td><td style="text-align:left">${p.trt ? esc((p.trt.sigla || p.trt.code) + " · " + (p.trt.nome || "")) : "–"}</td><td>${esc(p.bloco || "")}</td>${vs.map(k => k === "TAH" && !a.vars.includes("TAH") ? `<td class="calc" data-tah="${esc(p.id)}">${fmt(avVal(a, p.id, "TAH"), 2) ?? "–"}</td>` : `<td><input type="text" inputmode="decimal" data-p="${esc(p.id)}" data-k="${k}" value="${esc((a.valores[p.id] || {})[k] ?? "")}"></td>`).join("")}</tr>`).join("")}
+  </tbody></table></div><p class="hint" style="font-size:12px">Use vírgula ou ponto. Tudo é salvo automaticamente.</p>`;
+  $("avRot").oninput = e => { a.rotulo = e.target.value; save(); $("avTabs").querySelector(`[data-av="${a.id}"]`).textContent = a.rotulo || "Avaliação"; };
+  $("avData").onchange = e => { a.data = e.target.value; save(); };
+  body.querySelectorAll("[data-v]").forEach(c => c.onchange = () => { a.vars = Object.keys(CV).filter(k => k !== "TAH" && body.querySelector(`[data-v="${k}"]`).checked); save(); renderCampo(); });
+  body.querySelectorAll("input[data-p]").forEach(inp => {
+    inp.oninput = () => { const r = a.valores[inp.dataset.p] = a.valores[inp.dataset.p] || {}; r[inp.dataset.k] = inp.value.trim(); save(); markDone();
+      const td = body.querySelector(`[data-tah="${CSS.escape(inp.dataset.p)}"]`); if (td) td.textContent = avVal(a, inp.dataset.p, "TAH") == null ? "–" : fmt(avVal(a, inp.dataset.p, "TAH"), 2); };
+    inp.onkeydown = e => { if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const all = [...body.querySelectorAll(`input[data-k="${inp.dataset.k}"]`)], i = all.indexOf(inp) + (e.key === "ArrowUp" ? -1 : 1); if (all[i]) all[i].focus(); } };
+  });
+  $("avPaste").onclick = () => { $("avPasteBox").hidden = !$("avPasteBox").hidden; };
+  $("avPasteOk").onclick = () => { const m = pasteCampo(a, $("avPasteTxt").value, pp); $("avPasteMsg").hidden = false; $("avPasteMsg").textContent = m; save(); markDone(); setTimeout(renderCampo, 1200); };
+  $("avDel").onclick = () => { if ($("avDel").dataset.sure !== "1") { $("avDel").dataset.sure = "1"; $("avDel").textContent = "Confirmar exclusão"; return; } T.campo = T.campo.filter(x => x !== a); curAv = null; save(); renderCampo(); markDone(); };
+}
+function pasteCampo(a, txt, pp) {
+  const lines = txt.split(/\r?\n/).filter(l => l.trim()); if (lines.length < 2) return "Cole a linha de títulos e pelo menos uma linha de valores.";
+  const sep = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ",";
+  const head = lines[0].split(sep).map(h => h.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+  const alias = { BAGACO: "BAGACO", COMPRIMENTO: "COMPR", DIAMETRO: "DIAM", ALTURA: "ALT_CAMPO", PERFILHOS: "PERF", ENERGIA: "ENERGIA", "POL%": "POL", "FIBRA%": "FIBRA" };
+  const keys = head.map(h => { const x = h.replace(/\s*\(.*\)$/, "").replace(/\s+/g, ""); return CV[x] ? x : alias[x] || null; });
+  const pc = head.findIndex(h => /PARCELA|PLOT|^ID$/.test(h)); const idc = pc >= 0 ? pc : 0;
+  const byId = {}; pp.forEach(p => { byId[p.id.toUpperCase()] = p.id; });
+  let ok = 0, miss = []; const novos = new Set();
+  for (const l of lines.slice(1)) {
+    const c = l.split(sep), pid = byId[(c[idc] || "").trim().toUpperCase()]; if (!pid) { miss.push((c[idc] || "").trim()); continue; }
+    const r = a.valores[pid] = a.valores[pid] || {};
+    keys.forEach((k, i) => { if (k && i !== idc && c[i] != null && c[i].trim() !== "") { r[k] = c[i].trim(); novos.add(k); } }); ok++;
+  }
+  novos.forEach(k => { if (k !== "TAH" && !a.vars.includes(k)) a.vars.push(k); });
+  return `${ok} parcela(s) preenchidas` + (novos.size ? ` (${[...novos].join(", ")})` : "") + (miss.length ? `. Não encontrei no croqui: ${miss.slice(0, 6).join(", ")}${miss.length > 6 ? "…" : ""}.` : ".");
+}
+
 /* ---------------------------------------------------------------- resultados */
 const statCache = {};
 const TESTE = { tukey: ["Tukey", "HSD"], dms: ["DMS (t)", "DMS"], bonferroni: ["Bonferroni", "dif. mínima"], duncan: ["Duncan", ""], snk: ["SNK", ""], scottknott: ["Scott-Knott", ""], dunnett: ["Dunnett", "dif. mínima vs. controle"] };
@@ -570,18 +636,26 @@ function testeNota(A, te, alpha, inv) {
   return base + `Médias seguidas da mesma letra não diferem pelo teste de ${te[0]} a ${a}%.` + (A.teste === "scottknott" ? " Scott-Knott forma grupos sem sobreposição de letras." : "") + (inv ? " Para falhas, quanto menor o valor, melhor." : "");
 }
 const curTest = () => $("rTest").value || "tukey";
+let campoRev = 0;
+// fonte da análise: id do voo (número) ou "c:<id>" para uma avaliação de campo
 async function getStats(fid, k, alpha) {
-  const te = curTest(), key = `${S.trial.id}:${fid}:${k}:${alpha}:${te}:${(S.flights.find(f => f.id === fid) || {}).processado_em}`;
-  if (!statCache[key]) statCache[key] = API.get(`/api/ensaios/${S.trial.id}/estatistica?voo=${fid}&indice=${k}&alpha=${alpha}&teste=${te}`);
+  const te = curTest(), cmp = typeof fid === "string" && fid.startsWith("c:");
+  const key = `${S.trial.id}:${fid}:${k}:${alpha}:${te}:${cmp ? campoRev : (S.flights.find(f => f.id === fid) || {}).processado_em}`;
+  if (!statCache[key]) statCache[key] = API.get(`/api/ensaios/${S.trial.id}/estatistica?${cmp ? "aval=" + encodeURIComponent(fid.slice(2)) : "voo=" + fid}&indice=${k}&alpha=${alpha}&teste=${te}`);
   return statCache[key];
 }
 async function renderResults() {
   const sel = $("rDate"), prev = sel.value, done = S.flights.filter(f => f.tem_resultados);
-  sel.innerHTML = done.map(f => `<option value="${f.id}">${esc(f.rotulo)}</option>`).join(""); if (prev && done.some(f => String(f.id) === prev)) sel.value = prev;
+  const avs = (S.trial.campo || []).filter(a => Object.keys(a.valores || {}).length && avVars(a).length);
+  sel.innerHTML = (done.length ? `<optgroup label="Voos de drone">${done.map(f => `<option value="${f.id}">${esc(f.rotulo)}</option>`).join("")}</optgroup>` : "") +
+    (avs.length ? `<optgroup label="Avaliações de campo">${avs.map(a => `<option value="c:${esc(a.id)}">${esc(a.rotulo || "Avaliação")}</option>`).join("")}</optgroup>` : "");
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
   const body = $("resBody");
-  if (!done.length) { body.innerHTML = '<div class="card"><b>Ainda não há resultados.</b><p class="hint">Vá em Mapa e clique em Processar índices.</p></div>'; return; }
-  fillIdxSel("rIdx");
-  const k = $("rIdx").value || "CC", te = TESTE[curTest()], alpha = +$("rAlpha").value, fid = +sel.value, ix = IDX[k], d = ix.d;
+  if (!done.length && !avs.length) { body.innerHTML = '<div class="card"><b>Ainda não há resultados.</b><p class="hint">Vá em Mapa e clique em Processar índices, ou lance as avaliações em Campo.</p></div>'; return; }
+  const cmp = sel.value.startsWith("c:"), av = cmp ? avs.find(a => "c:" + a.id === sel.value) : null;
+  if (cmp) { const el = $("rIdx"), v = el.value, ks = avVars(av), hh = ks.map(x => `<option value="${x}">${IDX[x].l}</option>`).join(""); if (el.dataset.h !== hh) { el.innerHTML = hh; el.dataset.h = hh; el.value = ks.includes(v) ? v : ks[0]; } }
+  else fillIdxSel("rIdx");
+  const k = $("rIdx").value || "CC", te = TESTE[curTest()], alpha = +$("rAlpha").value, fid = cmp ? sel.value : +sel.value, ix = IDX[k], d = ix.d;
   body.innerHTML = '<p class="hint">Calculando…</p>';
   let A; try { A = await getStats(fid, k, alpha); } catch (e) { body.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
   if (A.grupos.length < 2) { body.innerHTML = '<div class="card">São necessários ao menos 2 tratamentos com parcelas processadas.</div>'; return; }
@@ -593,17 +667,66 @@ async function renderResults() {
     A.grupos.map(g => `<tr><td>${esc((g.sigla || g.code) + " · " + (g.nome || ""))}${g.ctrl ? " <span class='pill'>controle</span>" : ""}</td><td>${g.n}</td><td>${fmt(g.media, d)}</td><td class="l">${g.letras || ""}</td><td>${fmt(g.desvio, d)}</td>
       <td class="${g.ganho > 0 ? "pos" : g.ganho < 0 ? "neg" : ""}">${g.ctrl || g.ganho == null ? "–" : (g.ganho > 0 ? "+" : "") + fmt(g.ganho, d)}</td><td class="${g.ganho > 0 ? "pos" : g.ganho < 0 ? "neg" : ""}">${g.ctrl || g.ganho_pct == null ? "–" : (g.ganho_pct > 0 ? "+" : "") + fmt(g.ganho_pct, 1) + "%"}</td></tr>`).join("") +
     `</tbody></table></div><p class="hint" style="font-size:12px">${testeNota(A, te, alpha, ix.inv)}</p>`;
-  const evo = done.length > 1 ? await lineChart(done, k, alpha) : "";
-  if (evo) h += `<h3>Evolução entre os voos</h3><div class="card">${evo}</div>`;
-  if (done.length > 1) h += await closureSection(done, alpha);
-  const ks0 = idxAvail(), all0 = await Promise.all(ks0.map(x => getStats(fid, x, alpha).catch(() => null)));
+  const serie = cmp ? avs.filter(a => avVars(a).includes(k)).map(a => ({ id: "c:" + a.id, rotulo: a.rotulo || "Avaliação" })) : done;
+  const evo = serie.length > 1 ? await lineChart(serie, k, alpha) : "";
+  if (evo) h += `<h3>Evolução entre ${cmp ? "as avaliações" : "os voos"}</h3><div class="card">${evo}</div>`;
+  if (!cmp && done.length > 1) h += await closureSection(done, alpha);
+  const ks0 = cmp ? avVars(av) : idxAvail(), all0 = await Promise.all(ks0.map(x => getStats(fid, x, alpha).catch(() => null)));
   const KS = ks0.filter((x, i) => all0[i] && all0[i].grupos.length), all = all0.filter(a => a && a.grupos.length);
-  h += `<h3>Todos os índices neste voo</h3><div class="tw"><table class="res"><thead><tr><th>Tratamento</th>${KS.map(x => `<th>${x}${IDX[x].u ? " (" + IDX[x].u + ")" : ""}</th>`).join("")}</tr></thead><tbody>` +
+  h += `<h3>${cmp ? "Todas as variáveis nesta avaliação" : "Todos os índices neste voo"}</h3><div class="tw"><table class="res"><thead><tr><th>Tratamento</th>${KS.map(x => `<th>${x}${IDX[x].u ? " (" + IDX[x].u + ")" : ""}</th>`).join("")}</tr></thead><tbody>` +
     S.trial.tratamentos.map(t => `<tr><td>${esc((t.sigla || t.code) + " · " + (t.nome || ""))}</td>${all.map((a, i) => { const g = a && a.grupos.find(g => g.code === t.code); return `<td>${g ? fmt(g.media, IDX[KS[i]].d) + ((a.P < alpha || a.teste === "dunnett") && g.letras ? " " + g.letras : "") : "–"}</td>`; }).join("")}</tr>`).join("") +
     `<tr class="stat"><td>P (F)</td>${all.map(a => `<td>${a && a.P != null ? (a.P < 1e-4 ? "<0,0001" : fmt(a.P, 4)) : "–"}</td>`).join("")}</tr><tr class="stat"><td>CV %</td>${all.map(a => `<td>${a && a.CV != null ? fmt(a.CV, 2) : "–"}</td>`).join("")}</tr></tbody></table></div>`;
+  if (done.length && avs.length) h += `<h3>Correlação drone × campo</h3><div class="card" id="corrBox"></div>`;
   body.innerHTML = h;
+  if (done.length && avs.length) renderCorr(done, avs);
 }
 ["rIdx", "rDate", "rAlpha", "rTest"].forEach(i => $(i).onchange = renderResults);
+/* correlação entre os índices do drone e as avaliações de campo (Pearson) */
+const CORR = { fx: null, fy: null, vx: "CC", vy: "TCH", nivel: "parcela" };
+async function renderCorr(done, avs) {
+  const box = $("corrBox"); if (!box) return;
+  if (!done.some(f => "v" + f.id === CORR.fx)) CORR.fx = "v" + done[done.length - 1].id;
+  if (!avs.some(a => "c" + a.id === CORR.fy)) CORR.fy = "c" + avs[avs.length - 1].id;
+  const av = avs.find(a => "c" + a.id === CORR.fy), yv = avVars(av); if (!yv.includes(CORR.vy)) CORR.vy = yv.includes("TCH") ? "TCH" : yv[0];
+  const xv = idxAvail(); if (!xv.includes(CORR.vx)) CORR.vx = "CC";
+  const opt = (arr, v) => arr.map(([val, lab]) => `<option value="${esc(val)}" ${val === v ? "selected" : ""}>${esc(lab)}</option>`).join("");
+  box.innerHTML = `<p class="hint" style="margin-top:0">Mostra se o que o drone mede acompanha o que foi medido no campo. Por parcela usa todas as repetições; por tratamento usa as médias.</p>
+    <div class="ctrls">
+      <div class="field"><label for="cfx">Voo</label><select id="cfx">${opt(done.map(f => ["v" + f.id, f.rotulo]), CORR.fx)}</select></div>
+      <div class="field"><label for="cvx">Índice do drone</label><select id="cvx">${opt(xv.map(k => [k, IDX[k].l]), CORR.vx)}</select></div>
+      <div class="field"><label for="cfy">Avaliação de campo</label><select id="cfy">${opt(avs.map(a => ["c" + a.id, a.rotulo || "Avaliação"]), CORR.fy)}</select></div>
+      <div class="field"><label for="cvy">Variável de campo</label><select id="cvy">${opt(yv.map(k => [k, IDX[k].l]), CORR.vy)}</select></div>
+      <div class="field"><label for="cniv">Nível</label><select id="cniv">${opt([["parcela", "Por parcela"], ["tratamento", "Por média de tratamento"]], CORR.nivel)}</select></div>
+    </div><div id="corrOut"><p class="hint">Calculando…</p></div>`;
+  [["cfx", "fx"], ["cvx", "vx"], ["cfy", "fy"], ["cvy", "vy"], ["cniv", "nivel"]].forEach(([id, k]) => $(id).onchange = e => { CORR[k] = e.target.value; renderCorr(done, avs); });
+  try {
+    const q = (extra) => API.get(`/api/ensaios/${S.trial.id}/correlacao?fx=${CORR.fx}&fy=${encodeURIComponent(CORR.fy)}&nivel=${CORR.nivel}${extra}`);
+    const [D, M] = await Promise.all([q(`&vx=${CORR.vx}&vy=${CORR.vy}`), q(xv.map(k => "&vx=" + k).join("") + yv.map(k => "&vy=" + k).join(""))]);
+    const d = D.detalhe || {}, star = P => P == null ? "" : P < .01 ? "**" : P < .05 ? "*" : P < .1 ? "°" : "";
+    let h = d.r == null ? `<p class="hint">Dados insuficientes (n = ${d.n || 0}) ou sem variação.</p>` :
+      `<div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:8px 0"><span class="pill ${d.P < .05 ? "sig" : ""}">r = ${fmt(d.r, 3)} ${star(d.P)}</span><span style="color:var(--muted);font-size:12.5px">R² = ${fmt(d.R2, 3)} · P = ${pFmt(d.P)} · n = ${d.n} · ${CORR.vy} = ${fmt(d.a, 2)} ${d.b < 0 ? "−" : "+"} ${fmt(Math.abs(d.b), 3)} × ${CORR.vx}</span></div>` + scatter(d, CORR.vx, CORR.vy);
+    const ys = M.vy, xs = M.vx.filter(x => M.matriz.some(m => m.x === x && m.r != null)), cell = (x, y) => M.matriz.find(m => m.x === x && m.y === y) || {};
+    const bg = r => r == null ? "" : `background:${r > 0 ? `rgba(29,138,58,${Math.abs(r) * .45})` : `rgba(215,48,31,${Math.abs(r) * .45})`}`;
+    h += `<h3 style="margin-top:18px">Todos os índices × todas as variáveis (r de Pearson)</h3><div class="tw"><table class="res"><thead><tr><th>Índice</th>${ys.map(y => `<th>${esc(y)}</th>`).join("")}</tr></thead><tbody>` +
+      xs.map(x => `<tr><td>${esc(x)}</td>${ys.map(y => { const c = cell(x, y); return `<td style="${bg(c.r)}" title="P = ${pFmt(c.P)} · n = ${c.n ?? 0}">${c.r == null ? "–" : fmt(c.r, 2) + star(c.P)}</td>`; }).join("")}</tr>`).join("") +
+      `</tbody></table></div><p class="hint" style="font-size:12px">** P &lt; 0,01 · * P &lt; 0,05 · ° P &lt; 0,10. Verde: quando um sobe o outro sobe; vermelho: quando um sobe o outro cai.</p>`;
+    $("corrOut").innerHTML = h;
+  } catch (e) { $("corrOut").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+function scatter(d, kx, ky) {
+  const P = d.pontos || [], W = 900, H = 320, L = 64, R = W - 150, T = 16, B = H - 44;
+  const xs = P.map(p => p.x), ys = P.map(p => p.y), tx = niceTicks(Math.min(...xs), Math.max(...xs)), ty = niceTicks(Math.min(...ys), Math.max(...ys));
+  const x = v => L + (v - tx[0]) / (tx[tx.length - 1] - tx[0]) * (R - L), y = v => B - (v - ty[0]) / (ty[ty.length - 1] - ty[0]) * (B - T);
+  const tc = {}; S.trial.tratamentos.forEach((t, i) => tc[t.code] = [PAL[i % PAL.length], t.sigla || t.code]);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Dispersão ${esc(kx)} × ${esc(ky)}">`;
+  ty.forEach(t => s += `<line class="gl" x1="${L}" x2="${R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t, Math.abs(t) < 10 ? 2 : 0)}</text>`);
+  tx.forEach(t => s += `<text class="ax" x="${x(t)}" y="${B + 18}" text-anchor="middle">${fmt(t, Math.abs(t) < 10 ? 2 : 0)}</text>`);
+  s += `<text class="ax" x="${(L + R) / 2}" y="${H - 4}" text-anchor="middle">${esc(IDX[kx] ? IDX[kx].l : kx)}</text><text class="ax" transform="translate(14 ${(T + B) / 2}) rotate(-90)" text-anchor="middle">${esc(IDX[ky] ? IDX[ky].l : ky)}</text>`;
+  if (d.b != null) { const x0 = tx[0], x1 = tx[tx.length - 1]; s += `<line x1="${x(x0)}" x2="${x(x1)}" y1="${y(d.a + d.b * x0)}" y2="${y(d.a + d.b * x1)}" stroke="var(--fg)" stroke-dasharray="5 4" opacity=".55"/>`; }
+  P.forEach(p => { const c = (tc[p.trt] || ["#777"])[0]; s += `<circle cx="${x(p.x)}" cy="${y(p.y)}" r="5" fill="${c}" opacity=".85"><title>${esc(p.id)}: ${fmt(p.x, 3)} × ${fmt(p.y, 2)}</title></circle>`; });
+  Object.values(tc).forEach(([c, n], j) => s += `<rect x="${R + 16}" y="${T + j * 20}" width="10" height="10" rx="5" fill="${c}"/><text x="${R + 32}" y="${T + j * 20 + 9}">${esc(n)}</text>`);
+  return s + "</svg>";
+}
 /* fechamento do dossel: cobertura (CC) de cada tratamento ao longo dos voos e quando chega a 80% */
 const META_CC = 80;
 async function closureSection(fl, alpha) {

@@ -227,3 +227,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:color-mix(in s
 .pill.warn{background:#fde8c8;color:#8a4b00}
 .assume{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12.5px}
 .assume .hint{flex-basis:100%;margin:2px 0 0;font-size:12px}
+/* avaliações de campo */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px 3px 6px;margin:0;font-size:13px;background:var(--surface-2)}
+.ed-grid td{padding:3px 6px}
+.ed-grid input{width:84px;padding:4px 6px;text-align:right;font-family:var(--f-data);font-size:13px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+.ed-grid td.calc{color:var(--muted);font-family:var(--f-data)}
+#campoView .row3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}

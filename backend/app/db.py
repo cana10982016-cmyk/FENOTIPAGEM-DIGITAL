@@ -42,6 +42,10 @@ class Trial(Base):
     croqui: Mapped[dict] = mapped_column(JSON, default=dict)
     # {thr_mode: "otsu"|"fixed", thr_value: float}
     ajustes: Mapped[dict] = mapped_column(JSON, default=dict)
+    # avaliações de campo: [{id, rotulo, data, vars: [..], valores: {parcela: {var: valor}}}]
+    campo: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # ficha do ensaio: local, coordenadas, solo, clima, aplicação etc.
+    ficha: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
