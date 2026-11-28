@@ -67,3 +67,19 @@ def test_pressupostos(v):
     assert P["shapiro_P"] == pytest.approx(R["shapiro"], rel=1e-3, abs=1e-6)
     assert P["bartlett_P"] == pytest.approx(R["bartlett"], rel=1e-6)
     assert P["levene_P"] == pytest.approx(R["levene"], rel=1e-6)
+
+
+def test_croqui_com_sigla_repetida_e_sem_variancia():
+    """Croqui só com a sigla (T1 em várias células): cada parcela ganha um código; valores iguais não derrubam a resposta."""
+    import json as _json
+
+    from app.geometry import plots_of
+    trts = [{"code": str(i), "sigla": f"T{i}", "nome": "", "ctrl": i == 1} for i in range(1, 6)]
+    cro = {"rows": 3, "cols": 6, "cells": [["T1", "T2", "T3", "T4", "T5", "T1"], ["T3", "T4", "T5", "T1", "T2", "T3"],
+                                           ["T5", "T1", "T2", "T3", "T4", "T5"]]}
+    pl = plots_of(cro, trts)
+    assert len({p.id for p in pl}) == 18 and all(p.trt for p in pl)
+    res = {p.id: {"CC": 10.0 * int(p.trt["code"])} for p in pl}  # sem variação dentro do tratamento
+    for t in ("tukey", "scottknott", "duncan", "dunnett"):
+        A = stats.analyze(pl, res, trts, "CC", 0.1, t)
+        _json.dumps(A, allow_nan=False)

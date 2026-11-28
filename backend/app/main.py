@@ -29,6 +29,25 @@ log = logging.getLogger("fenotipagem")
 DB_ERRO = ""
 
 
+def _data_ok(d: str | None) -> str:
+    """AAAA-MM-DD válida, ou vazio."""
+    try:
+        return datetime.strptime((d or "").strip(), "%Y-%m-%d").strftime("%Y-%m-%d") if d else ""
+    except ValueError:
+        return ""
+
+
+def _fix_bad_dates(s: Session) -> None:
+    """Voos gravados com data inválida (ex.: tirada errado do nome do arquivo) ficam sem data."""
+    for f in s.scalars(select(Flight).where(Flight.data_voo != "")):
+        if not _data_ok(f.data_voo):
+            bad = "/".join(reversed(f.data_voo.split("-")))
+            if f.rotulo in (bad, f.data_voo):
+                f.rotulo = Path(f.arquivo or "voo").stem[:100]
+            f.data_voo = ""
+    s.commit()
+
+
 def _sem_senha(msg: str) -> str:
     return re.sub(r"(://[^:/@\s]+:)[^@\s]+@", r"\1***@", msg)[:500]
 
@@ -45,6 +64,7 @@ async def lifespan(app: FastAPI):
         return
     with SessionLocal() as s:
         bootstrap_admin(s)
+        _fix_bad_dates(s)
         if config.PERMITIR_ENVIO:
             # voos que estavam no meio do processamento quando o servidor parou
             for f in s.scalars(select(Flight).where(Flight.status.in_(["preparando", "calculando"]))):
@@ -335,6 +355,7 @@ def upload_flight(tid: int, bg: BackgroundTasks, arquivo: UploadFile = File(...)
     dest = config.UPLOAD_DIR / f"{tid}_{uuid.uuid4().hex[:10]}{Path(name).suffix.lower()}"
     with dest.open("wb") as out:
         shutil.copyfileobj(arquivo.file, out, length=8 * 1024 * 1024)
+    data_voo = _data_ok(data_voo)
     f = Flight(ensaio_id=t.id, rotulo=rotulo or data_voo or name, data_voo=data_voo, arquivo=name, caminho=str(dest),
                tamanho=dest.stat().st_size, status="preparando")
     s.add(f)
@@ -360,7 +381,7 @@ def start_photos(tid: int, body: FotosIn, _: User = Depends(current_user), s: Se
     _need_envio()
     t = get_trial(s, tid)
     q = body.qualidade if body.qualidade in ("rapido", "completo") else "completo"
-    f = Flight(ensaio_id=t.id, rotulo=body.rotulo or body.data_voo or "Fotos do drone", data_voo=body.data_voo,
+    f = Flight(ensaio_id=t.id, rotulo=body.rotulo or body.data_voo or "Fotos do drone", data_voo=_data_ok(body.data_voo),
                arquivo="Fotos do drone", status="fotos", odm_qualidade=q, odm_fotos=0, tamanho=0)
     s.add(f)
     s.commit()
@@ -414,6 +435,8 @@ def assemble(fid: int, _: User = Depends(current_user), s: Session = Depends(get
 def update_flight(fid: int, body: FlightIn, bg: BackgroundTasks, _: User = Depends(current_user), s: Session = Depends(get_session)):
     f = get_flight(s, fid)
     data = body.model_dump(exclude_none=True)
+    if "data_voo" in data:
+        data["data_voo"] = _data_ok(data["data_voo"])
     bandas = data.pop("bandas", None)
     for k, v in data.items():
         setattr(f, k, v)

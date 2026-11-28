@@ -424,4 +424,7 @@ def inspect_dsm(path: str | Path) -> dict:
     with rasterio.open(path) as src:
         if src.crs is None or src.transform.is_identity:
             raise RasterError("O modelo de altura (DSM) precisa ser um GeoTIFF georreferenciado.")
+        if src.count > 2 or src.dtypes[0] == "uint8":
+            raise RasterError("Esse arquivo parece ser o ortomosaico (imagem colorida), não o modelo de altura. "
+                              "O DSM tem uma só banda com a altitude em metros (ex.: dsm.tif).")
         return {"width": src.width, "height": src.height, "crs": src.crs.to_string()}

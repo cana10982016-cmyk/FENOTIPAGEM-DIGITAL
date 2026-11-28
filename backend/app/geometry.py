@@ -58,14 +58,20 @@ def parse_cell(value: str, r: int, trts: list):
 def plots_of(trial_croqui: dict, trts: list) -> list[Plot]:
     out = []
     cells = trial_croqui.get("cells") or []
+    seen: dict[str, int] = {}
+    pos = []
     for r in range(int(trial_croqui.get("rows", 0))):
         for c in range(int(trial_croqui.get("cols", 0))):
             v = (cells[r][c] if r < len(cells) and c < len(cells[r]) else "") or ""
             v = str(v).strip()
-            if not v:
-                continue
-            t, b = parse_cell(v, r, trts)
-            out.append(Plot(v, r, c, t, b))
+            if v:
+                seen[v] = seen.get(v, 0) + 1
+                pos.append((v, r, c))
+    for v, r, c in pos:
+        t, b = parse_cell(v, r, trts)
+        # o mesmo código em várias células (ex.: só a sigla T1): cada parcela ganha um código pela posição
+        pid = v if seen[v] == 1 else f"{v}-L{r + 1}C{c + 1}"
+        out.append(Plot(pid, r, c, t, b))
     return out
 
 

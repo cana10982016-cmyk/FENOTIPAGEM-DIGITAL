@@ -98,7 +98,25 @@ def _pressupostos(groups: list, resid: list[float]) -> dict:
     return out
 
 
+def _clean(x):
+    """NaN/infinito viram None (o JSON não aceita), em qualquer nível."""
+    if isinstance(x, float):
+        return x if math.isfinite(x) else None
+    if isinstance(x, dict):
+        return {k: _clean(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_clean(v) for v in x]
+    return x
+
+
 def analyze(plots, results: dict, trts: list, index: str, alpha: float = 0.1, teste: str = "tukey") -> dict:
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return _clean(_analyze(plots, results, trts, index, alpha, teste))
+
+
+def _analyze(plots, results: dict, trts: list, index: str, alpha: float = 0.1, teste: str = "tukey") -> dict:
     pp = [p for p in plots if p.trt and p.id in results and results[p.id].get(index) is not None]
     groups = []
     for t in trts:

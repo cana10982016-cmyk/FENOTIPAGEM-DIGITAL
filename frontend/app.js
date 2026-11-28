@@ -258,7 +258,13 @@ drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
 drop.ondragleave = () => drop.classList.remove("over");
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
 $("fileIn").onchange = e => { if (e.target.files[0]) upload(e.target.files[0]); e.target.value = ""; };
-function guessDate(n) { const m = n.match(/(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : ""; }
+// data no nome do arquivo: 2026-08-29, 20260829 ou 29-08-2026 (só aceita datas válidas)
+function guessDate(n) {
+  const ok = (y, m, d) => { y = +y; m = +m; d = +d; if (y < 1990 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return ""; const dt = new Date(y, m - 1, d); return dt.getMonth() === m - 1 ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : ""; };
+  for (const m of n.matchAll(/(?<!\d)(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})(?!\d)/g)) { const r = ok(m[1], m[2], m[3]); if (r) return r; }
+  for (const m of n.matchAll(/(?<!\d)(\d{2})[-_.](\d{2})[-_.](\d{4})(?!\d)/g)) { const r = ok(m[3], m[2], m[1]); if (r) return r; }
+  return "";
+}
 function upload(file) {
   const fd = new FormData(); fd.append("arquivo", file);
   const date = $("upDate").value || guessDate(file.name);
@@ -399,14 +405,17 @@ function parseCell(v, r) {
   if (by(v)) return { trt: by(v), bloco: String.fromCharCode(65 + r) }; return { trt: null, bloco: null };
 }
 function parsedPlots() {
-  const out = []; let bad = 0; const { rows, cols } = C();
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const v = cell(r, c); if (!v) continue; const p = parseCell(v, r); if (!p.trt) bad++; out.push({ id: v, r, c, trt: p.trt, bloco: p.bloco }); }
-  return { plots: out, bad, valid: out.length > 0 && bad === 0 };
+  const out = []; let bad = 0; const { rows, cols } = C(), seen = {};
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const v = cell(r, c); if (v) seen[v] = (seen[v] || 0) + 1; }
+  // o mesmo código em várias células (ex.: só a sigla T1): cada parcela ganha um código pela posição (igual ao servidor)
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const v = cell(r, c); if (!v) continue; const p = parseCell(v, r); if (!p.trt) bad++; out.push({ id: seen[v] > 1 ? `${v}-L${r + 1}C${c + 1}` : v, r, c, trt: p.trt, bloco: p.bloco }); }
+  const rep = Object.values(seen).some(n => n > 1);
+  return { plots: out, bad, rep, valid: out.length > 0 && bad === 0 };
 }
 function croqStatus() {
   const p = parsedPlots(), el = $("croqStatus"), blocks = new Set(p.plots.filter(x => x.bloco).map(x => x.bloco));
-  el.classList.toggle("warn", p.bad > 0 || !p.plots.length);
-  el.textContent = !p.plots.length ? "Preencha a identificação das parcelas." : p.bad ? `${p.bad} parcela(s) com tratamento não encontrado no cadastro.` : `${p.plots.length} parcelas · ${new Set(p.plots.map(x => x.trt.code)).size} tratamentos · ${blocks.size} blocos.`;
+  el.classList.toggle("warn", p.bad > 0 || !p.plots.length || p.rep);
+  el.textContent = !p.plots.length ? "Preencha a identificação das parcelas." : p.bad ? `${p.bad} parcela(s) com tratamento não encontrado no cadastro.` : `${p.plots.length} parcelas · ${new Set(p.plots.map(x => x.trt.code)).size} tratamentos · ${blocks.size} blocos.` + (p.rep ? " Há códigos repetidos: cada parcela foi identificada pela posição (linha e coluna). Para a análise em blocos (DBC), escreva o nº do tratamento + a letra do bloco (ex.: 1A, 2A, 1B)." : "");
   markDone();
 }
 function bil(q, u, v) { return [(1 - u) * (1 - v) * q[0][0] + u * (1 - v) * q[1][0] + u * v * q[2][0] + (1 - u) * v * q[3][0], (1 - u) * (1 - v) * q[0][1] + u * (1 - v) * q[1][1] + u * v * q[2][1] + (1 - u) * v * q[3][1]]; }
